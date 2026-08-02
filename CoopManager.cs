@@ -1,0 +1,192 @@
+﻿
+
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading.Tasks;
+using BepInEx;
+using HarmonyLib;
+using Microsoft.Win32;
+using Shapes;
+using SmartTutorial;
+using TestMod;
+using UnityEngine;
+using UnityEngine.Profiling;
+namespace RCM_Coop{
+
+    [BepInDependency(RCMManager.IDENTIFIER, BepInDependency.DependencyFlags.HardDependency)]
+    [BepInPlugin(IDENTIFIER, "Co-op Plugin", "1.0.0.0")]
+    internal class CoopManager : BaseUnityPlugin{
+        const string IDENTIFIER = "RCM.plugins.coop";
+        static RCMModUI mod;
+        private void Awake(){
+            new Harmony(IDENTIFIER).PatchAll();
+            RCMManager.ConnectMod("Co-op").ContinueWith(t => {
+                mod = t.Result;
+
+                UpdateUI();
+
+            }, TaskScheduler.FromCurrentSynchronizationContext());
+        }
+        static void UpdateUI(){
+            if (is_connecting)
+            {
+                mod.CreateLabelField("connecting...");
+            }
+            else if (session == null)
+            {
+                mod.CreateButtonField("connect", BeginConnect);
+            }
+            else
+            {
+                if (session.is_server)
+                {
+                    mod.CreateLabelField("running as server");
+                }
+                else
+                {
+                    mod.CreateLabelField("running as client");
+                }
+                mod.CreateButtonField("disconnect", BeginDisconnect);
+            }
+                
+        }
+
+        static bool is_connecting = false;
+        static Session session = null;
+        static bool is_client = session?.is_server == false;
+
+        static async void BeginConnect(){
+            is_connecting = true;
+            UpdateUI();
+            RCMManager.Log("beginning connect");
+            session = await Session.StartAutoAsync();
+            if (session.is_server)
+            {
+
+            }
+            else
+            {
+
+            }
+            is_connecting = false;
+            UpdateUI();
+        }
+        static void BeginDisconnect()
+        {
+            if (session != null)
+            {
+                session.Terminate();
+                session = null;
+                UpdateUI();
+            }
+        }
+
+
+        #region map seeds
+        // force seed
+        [HarmonyPatch(typeof(InitMap), "StartInit")]
+        public static class InitMapPatch_StartInit{
+            [HarmonyPrefix]
+            public static bool Prefix(ref LandscapeGenerator landscapeGenerator,ref LandscapeGenerator fallbackLandscapeGenerator,ref DefaultAiBehaviour ai,ref bool asCoroutine,ref int? landscapeGeneratorSeed,ref bool landscapeGeneratorWasInstantiated){
+                landscapeGeneratorSeed = 1;
+                RCMManager.Log($"[Co-op] StartInit Prefix: landscapeGeneratorSeed set to {landscapeGeneratorSeed}");
+                return true;
+            }
+        }
+        #endregion
+
+        #region entity spawning stubs
+        // stub out entity instantiation
+        [HarmonyPatch(typeof(EntityFactory), "InstantiateEntity")]
+        public static class Patch_InstantiateEntity_Stub{
+            [HarmonyPrefix]
+            public static bool Prefix(string entityId,Vector3 position,EntityController originEntity,string tag,string name,Transform parentTransform,UnitRole additionalRoles,bool hasBeenCalledFromAbove,string instantiationInfo,ref EntityController __result){
+                if (is_client){
+                    __result = null;
+                    return false;
+                }
+                return true;
+        }}
+        // this stubs out all entities created at map generation
+        [HarmonyPatch(typeof(EntityFactory), "InstantiateEntityFromPrefab")]
+        public static class Patch_InstantiateEntityFromPrefab_Stub{
+            [HarmonyPrefix]
+            public static bool Prefix(GameObject prefab,Vector3 position,Quaternion rotation,Vector3 scale,string tag,string instantiationInfo){
+                if (is_client)
+                    return false;
+                return true;
+            }
+        }
+        // this stubs out engineer and entities spawned at start via hacks
+        [HarmonyPatch(typeof(SetupPlayerStart), "SpawnStartEntities")]
+        public static class Patch_SetupPlayerStart_SpawnStartEntities{
+            [HarmonyPrefix]
+            public static bool Prefix(){
+                if (is_client)
+                    return false;
+                return true;
+        }}
+        #endregion
+        
+        #region game over stubs
+        // patch out game losing conditions
+        [HarmonyPatch(typeof(Game), "Lose")]
+        public static class Patch_Game_Lose{
+            [HarmonyPrefix]
+            public static bool Prefix(){
+                RCMManager.Log($"Game.Lose hit:  {new StackTrace(true).ToString()}");
+                if (is_client){
+                    return false;
+                }
+                return true;
+        }}
+        [HarmonyPatch(typeof(FinishLevel), "Lose_Static")]
+        public static class Patch_FinishLevel_Lose_Static{
+            [HarmonyPrefix]
+            public static bool Prefix(){
+                RCMManager.Log($"FinishLevel.Lose_Static hit:  {new StackTrace(true).ToString()}");
+                if (is_client){
+                    return false;
+                }
+                return true;
+        }}
+        [HarmonyPatch(typeof(FinishLevel), "Win_Static")]
+        public static class Patch_FinishLevel_Win_Static{
+            [HarmonyPrefix]
+            public static bool Prefix(){
+                RCMManager.Log($"FinishLevel.Win_Static hit:  {new StackTrace(true).ToString()}");
+                if (is_client){
+                    return false;
+                }
+                return true;
+        }}
+        #endregion
+
+
+
+        [HarmonyPatch(typeof(EntityController), "OnHasBeenInstantiated")]
+        public static class Patch_EntityController_OnHasBeenInstantiated{
+            [HarmonyPrefix]
+            public static bool Prefix(EntityController __instance, bool hasBeenCalledFromAbove){
+                EntitiesManager.EntitySpawned(__instance, hasBeenCalledFromAbove);
+                return true;
+        }}
+        
+        [HarmonyPatch(typeof(EntityController), "Destroy")]
+        public static class Patch_EntityController_Destroy{
+            [HarmonyPrefix]
+            public static bool Prefix(EntityController __instance, bool withoutTriggeringDestructionActions, EntityController originator){
+                EntitiesManager.EntityDestroyed(__instance, withoutTriggeringDestructionActions, originator);
+                // we dont want clients killing units on their own as this would desync a lot of stuff
+                if (is_client) return false;
+                return true;
+        }}
+
+
+
+    }
+}
