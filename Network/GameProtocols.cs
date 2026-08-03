@@ -9,14 +9,17 @@ namespace RCM_Coop.Network
     internal class GameProtocols
     {
 
-        enum packet_protocols : byte{
+        public enum packet_protocol : byte
+        {
+            none = 0,
+            client_join_request,
+            server_join_response,
+
             // server will send one of these to a client when they've connected
-            // server_game_status_menu, // will indicate that we're now in the menu, so to back out of the game // NOTE: will likely be redundant as end game exists prob
             server_game_status_loading, // includes map stage info for client to join & generate off of
             server_game_status_waiting, // includes initial game state data in packet
             server_game_status_started,
-            server_game_status_jip_started, // server_game_status_loading & server_game_status_waiting & server_game_status_started combined, so we only have to send 1 packet to respond to JIP clients
-            // client responds with these to with a ready indicator?
+
             client_game_status_ready,
 
 
@@ -25,10 +28,10 @@ namespace RCM_Coop.Network
         void DeserializeProtocols(byte[] data)
         {
             // read the first byte to determine the protocol
-            packet_protocols protocol = (packet_protocols)data[0];
+            packet_protocol protocol = (packet_protocol)data[0];
             switch (protocol)
             {
-                case packet_protocols.game_status:
+                case packet_protocol.game_status:
                     // read the next byte to determine the game status
                     byte game_status = data[1];
                     break;
@@ -39,6 +42,20 @@ namespace RCM_Coop.Network
         }
 
 
+        public static byte[] SerializeClientJoinRequest(string username, string password){
+            int buffer_size = username.Length + password.Length + 3; // +2 for null terminators + 1 for protocol byte
+            byte[] buffer = new byte[buffer_size];
+            buffer[0] = (byte)packet_protocol.client_join_request;
+            Encoding.UTF8.GetBytes(username, 0, username.Length, buffer, 1);
+            Encoding.UTF8.GetBytes(password, 0, password.Length, buffer, username.Length + 2);
+            return buffer;
+        }
 
+
+        
+        void DeserializeClientJoinRequest(byte[] data, out string username, out string password)
+        {
+
+        }
     }
 }

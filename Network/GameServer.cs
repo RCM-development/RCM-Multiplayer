@@ -11,7 +11,9 @@ namespace RCM_Coop
 {
     internal class GameServer
     {
+        Session session;
         GameServer(Session session){
+            this.session = session;
             session.data_recieved_callback = OnDataReceived;
             session.connection_terminated_callback = OnConnectionTerminated;
             session.connection_opened_callback = OnConnectionOpened;
