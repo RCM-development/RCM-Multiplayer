@@ -27,18 +27,18 @@ namespace RCM_Coop.Network
 
         void DeserializeProtocols(byte[] data)
         {
-            // read the first byte to determine the protocol
-            packet_protocol protocol = (packet_protocol)data[0];
-            switch (protocol)
-            {
-                case packet_protocol.game_status:
-                    // read the next byte to determine the game status
-                    byte game_status = data[1];
-                    break;
-                default:
-                    RCMManager.Log($"[Co-op] Unknown protocol {protocol}");
-                    break;
-            }
+            //// read the first byte to determine the protocol
+            //packet_protocol protocol = (packet_protocol)data[0];
+            //switch (protocol)
+            //{
+            //    case packet_protocol.game_status:
+            //        // read the next byte to determine the game status
+            //        byte game_status = data[1];
+            //        break;
+            //    default:
+            //        RCMManager.Log($"[Co-op] Unknown protocol {protocol}");
+            //        break;
+            //}
         }
 
 
@@ -53,9 +53,9 @@ namespace RCM_Coop.Network
 
 
         
-        void DeserializeClientJoinRequest(byte[] data, out string username, out string password)
-        {
+        //void DeserializeClientJoinRequest(byte[] data, out string username, out string password)
+        //{
 
-        }
+        //}
     }
 }

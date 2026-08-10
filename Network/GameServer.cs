@@ -50,23 +50,23 @@ namespace RCM_Coop
         }
         string TagFromEnum(entity_tags tag){
             switch (tag){
-                case entity_tags.Player: return "Player";
-                case entity_tags.Ai: return "AI";
-                case entity_tags.Neutral: return "Neutral";
-                case entity_tags.WorldMesh: return "WorldMesh";
-                case entity_tags.World: return "World";
-                case entity_tags.Button: return "Button";
+                case entity_tags.Player: return Tags.Player;
+                case entity_tags.Ai: return Tags.Ai;
+                case entity_tags.Neutral: return Tags.Neutral;
+                case entity_tags.WorldMesh: return Tags.WorldMesh;
+                case entity_tags.World: return Tags.World;
+                case entity_tags.Button: return Tags.Button;
                 default: return "";
             }
         }
         entity_tags EnumFromTag(string tag){
             switch (tag){
-                case "Player": return entity_tags.Player;
-                case "AI": return entity_tags.Ai;
-                case "Neutral": return entity_tags.Neutral;
-                case "WorldMesh": return entity_tags.WorldMesh;
-                case "World": return entity_tags.World;
-                case "Button": return entity_tags.Button;
+                case Tags.Player: return entity_tags.Player;
+                case Tags.Ai: return entity_tags.Ai;
+                case Tags.Neutral: return entity_tags.Neutral;
+                case Tags.WorldMesh: return entity_tags.WorldMesh;
+                case Tags.World: return entity_tags.World;
+                case Tags.Button: return entity_tags.Button;
                 default: return entity_tags.Neutral;
             }
         }
