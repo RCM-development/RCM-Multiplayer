@@ -3,19 +3,20 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using RCM_Coop.Network.Helpers;
+namespace RCM_Coop.Network{
+    public class GameProtocols{
+        enum proto : byte{
+            NONE = 0,
+            ClientJoinRequest, // {str:username, str:password}
+            ServerJoinResponseOk, // {byte:player_id}
+            ServerJoinResponseFailed, // {byte:error}
+            ServerPlayerHasJoined, // {byte:player_id, string:username}
 
-namespace RCM_Coop.Network
-{
-    internal class GameProtocols
-    {
 
-        public enum packet_protocol : byte
-        {
-            none = 0,
-            client_join_request,
-            server_join_response,
 
-            // server will send one of these to a client when they've connected
+
+
             server_game_status_loading, // includes map stage info for client to join & generate off of
             server_game_status_waiting, // includes initial game state data in packet
             server_game_status_started,
@@ -24,38 +25,86 @@ namespace RCM_Coop.Network
 
 
         }
-
-        void DeserializeProtocols(byte[] data)
-        {
-            //// read the first byte to determine the protocol
-            //packet_protocol protocol = (packet_protocol)data[0];
-            //switch (protocol)
-            //{
-            //    case packet_protocol.game_status:
-            //        // read the next byte to determine the game status
-            //        byte game_status = data[1];
-            //        break;
-            //    default:
-            //        RCMManager.Log($"[Co-op] Unknown protocol {protocol}");
-            //        break;
-            //}
+        public static IEnumerable<SerializablePacket> DeserializePackets(byte[] data){
+            PacketReader packet = new PacketReader(data);
+            while (true){
+                proto current_proto = (proto)packet.DeserializeByte();
+                switch (current_proto){
+                    case proto.ClientJoinRequest:           yield return new ClientJoinRequest(packet); break;
+                    case proto.ServerJoinResponseOk:        yield return new ServerJoinResponseOk(packet); break;
+                    case proto.ServerJoinResponseFailed:    yield return new ServerJoinResponseFailed(packet); break;
+                    case proto.ServerPlayerHasJoined:       yield return new ServerPlayerHasJoined(packet); break;
+                    default: yield break;
+            }}
         }
-
-
-        public static byte[] SerializeClientJoinRequest(string username, string password){
-            int buffer_size = username.Length + password.Length + 3; // +2 for null terminators + 1 for protocol byte
-            byte[] buffer = new byte[buffer_size];
-            buffer[0] = (byte)packet_protocol.client_join_request;
-            Encoding.UTF8.GetBytes(username, 0, username.Length, buffer, 1);
-            Encoding.UTF8.GetBytes(password, 0, password.Length, buffer, username.Length + 2);
-            return buffer;
+        public abstract class SerializablePacket{ public virtual byte[] Serialize() => [];}
+        public class ClientJoinRequest : SerializablePacket{
+            public string username;
+            public string password;
+            public ClientJoinRequest(string username, string password){
+                this.username = username;
+                this.password = password;
+            }
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ClientJoinRequest);
+                packet.SerializeString(username);
+                packet.SerializeString(password);
+                return packet.GetData();
+            }
+            public ClientJoinRequest(PacketReader packet){
+                username = packet.DeserializeString();
+                password = packet.DeserializeString();
+            }
         }
-
-
-        
-        //void DeserializeClientJoinRequest(byte[] data, out string username, out string password)
-        //{
-
-        //}
+        public class ServerJoinResponseOk : SerializablePacket{
+            public byte player_id;
+            public ServerJoinResponseOk(byte player_id){
+                this.player_id = player_id;
+            }
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ServerJoinResponseOk);
+                packet.SerializeByte(player_id);
+                return packet.GetData();
+            }
+            public ServerJoinResponseOk(PacketReader packet){
+                player_id = packet.DeserializeByte();
+            }
+        }
+        public class ServerJoinResponseFailed : SerializablePacket{
+            public enum JoinError : byte{ username_taken, bad_password, already_connected, session_full, rejected }
+            public JoinError join_error;
+            public ServerJoinResponseFailed(JoinError join_error){
+                this.join_error = join_error;
+            }
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ServerJoinResponseFailed);
+                packet.SerializeByte((byte)join_error);
+                return packet.GetData();
+            }
+            public ServerJoinResponseFailed(PacketReader packet){
+                join_error = (JoinError)packet.DeserializeByte();
+            }
+        }
+        public class ServerPlayerHasJoined : SerializablePacket{
+            public byte player_id;
+            public string username;
+            public ServerPlayerHasJoined(byte player_id, string username){
+                this.player_id = player_id;
+            }
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ServerPlayerHasJoined);
+                packet.SerializeByte(player_id);
+                packet.SerializeString(username);
+                return packet.GetData();
+            }
+            public ServerPlayerHasJoined(PacketReader packet){
+                player_id = packet.DeserializeByte();
+                username = packet.DeserializeString();
+            }
+        }
     }
 }

@@ -8,6 +8,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 using TestMod;
+using static RCM_Coop.Network.GameProtocols;
 namespace RCM_Coop{
 
     public class Session{
@@ -47,8 +48,10 @@ namespace RCM_Coop{
         public bool is_server;
         public bool is_alive;
         public virtual void Terminate() { }
-        public virtual async void SendTCP(byte[] data) { }
-        public async Task SendTCP(byte[] data, TcpClient target){
+        public void SendTCP(SerializablePacket packet) => SendTCP(packet.Serialize());
+        public async void SendTCP(SerializablePacket packet, TcpClient target) => await SendTCP(packet.Serialize(), target);
+        protected virtual async void SendTCP(byte[] data) { }
+        protected async Task SendTCP(byte[] data, TcpClient target){
             if (data.Length > MAX_PACKET_SIZE){
                 RCMManager.Log("Data too large for TCP packet, cant send.");
                 return;
@@ -80,7 +83,7 @@ namespace RCM_Coop{
                     c.Close();
             }} catch (Exception e) { RCMManager.Log("SERVER TERMINATING ERROR: " + e.Message); }
         }
-        public override async void SendTCP(byte[] data){
+        protected override async void SendTCP(byte[] data){
             for (int i = 0; i < tcpClients.Count; i++)
                 await SendTCP(data, tcpClients[i]);
         }
@@ -133,7 +136,7 @@ namespace RCM_Coop{
             try{ if (tcpClient != null) tcpClient.Close();
             } catch (Exception ex){ RCMManager.Log("Error terminating session client: " + ex.Message);}
         }
-        public override async void SendTCP(byte[] data) => await SendTCP(data, tcpClient);
+        protected override async void SendTCP(byte[] data) => await SendTCP(data, tcpClient);
         private async Task StartTcpClient(){
             try{tcpClient = new TcpClient();
                 await tcpClient.ConnectAsync(IPAddress.Loopback, TcpPort);
