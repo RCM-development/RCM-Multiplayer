@@ -49,7 +49,11 @@ namespace RCM_Coop.Network{
                         RCMManager.Log($"[Co-op] player joined: {e.username}");
                         players.AddPlayer(e.username, e.player_id);
                         break;
-            }
+                    case ServerPlayerHasLeft e:
+                        RCMManager.Log($"[Co-op] player left: {players.GetPlayer(e.player_id)?.username}");
+                        players.RemovePlayer(e.player_id);
+                        break;
+                }
         }
         void OnConnectionTerminated(TcpClient client){
             RCMManager.Log($"[Co-op] Connection terminated with {client.Client.RemoteEndPoint}");

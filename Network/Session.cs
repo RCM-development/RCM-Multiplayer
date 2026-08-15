@@ -115,9 +115,9 @@ namespace RCM_Coop{
                 data_recieved_callback.Invoke(data, client);
             }} catch (Exception e) { 
                 RCMManager.Log("SERVER listen TCP ERROR: " + e.Message);
-                connection_terminated_callback?.Invoke(client);  
-                client.Close();  
-            } 
+                connection_terminated_callback?.Invoke(client);
+                client.Close();
+            }
             tcpClients.Remove(client);
         }
     }

@@ -17,12 +17,14 @@ namespace RCM_Coop
     internal class GameServer
     {
         Session session;
+        string session_password = "";
         PlayerManager players;
+        byte last_player_id = 1;
+        byte NewPlayerID() => last_player_id++;
         GameServer(Session session){
             this.session = session;
             players = new PlayerManager();
             players.AddOurselves(0);
-
 
             session.data_recieved_callback = OnDataReceived;
             session.connection_terminated_callback = OnConnectionTerminated;
@@ -30,10 +32,7 @@ namespace RCM_Coop
         }
 
 
-        byte last_player_id = 1;
-        byte NewPlayerID() => last_player_id++;
 
-        string session_password = "";
 
         HashSet<TcpClient> unconnected_clients = new();
 
@@ -44,6 +43,12 @@ namespace RCM_Coop
                 if (item.client == client)
                     return true;
             return false;
+        }
+        byte GetCLientId(TcpClient client){
+            foreach (var item in clients)
+                if (item.client == client)
+                    return item.id;
+            return 255;
         }
 
         void OnDataReceived(byte[] data, TcpClient client){
@@ -91,6 +96,14 @@ namespace RCM_Coop
         }
         void OnConnectionTerminated(TcpClient client){
             RCMManager.Log($"[Co-op] Connection terminated with {client.Client.RemoteEndPoint}");
+
+            byte player_id = GetCLientId(client);
+            if (player_id != 255){
+                string username = players.GetPlayer(player_id)?.username;
+                players.RemovePlayer(player_id);
+                session.SendTCP(new ServerPlayerHasLeft(player_id));
+                RCMManager.Log($"[Co-op] Player disconnected from session: '{username}'");
+            }
         }
         void OnConnectionOpened(TcpClient client){
             RCMManager.Log($"[Co-op] Connection opened with {client.Client.RemoteEndPoint}");

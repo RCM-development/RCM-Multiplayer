@@ -33,6 +33,12 @@ namespace RCM_Coop.Network{
                     is_unique_username = false;
             return is_unique_username;
         }
+        public Player GetPlayer(byte id){
+            foreach (var item in players)
+                if (item.id == id) 
+                    return item;
+            return null;
+        }
         public List<Player> GetPlayersList() => players;
     }
 }

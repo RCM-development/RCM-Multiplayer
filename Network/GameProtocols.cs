@@ -12,8 +12,7 @@ namespace RCM_Coop.Network{
             ServerJoinResponseOk, // {byte:player_id}
             ServerJoinResponseFailed, // {byte:error}
             ServerPlayerHasJoined, // {byte:player_id, string:username}
-
-
+            ServerPlayerHasLeft, // {byte:player_id}
 
 
 
@@ -34,6 +33,7 @@ namespace RCM_Coop.Network{
                     case proto.ServerJoinResponseOk:        yield return new ServerJoinResponseOk(packet); break;
                     case proto.ServerJoinResponseFailed:    yield return new ServerJoinResponseFailed(packet); break;
                     case proto.ServerPlayerHasJoined:       yield return new ServerPlayerHasJoined(packet); break;
+                    case proto.ServerPlayerHasLeft:         yield return new ServerPlayerHasLeft(packet); break;
                     default: yield break;
             }}
         }
@@ -93,6 +93,7 @@ namespace RCM_Coop.Network{
             public string username;
             public ServerPlayerHasJoined(byte player_id, string username){
                 this.player_id = player_id;
+                this.username = username;
             }
             public override byte[] Serialize(){
                 PacketWriter packet = new();
@@ -104,6 +105,21 @@ namespace RCM_Coop.Network{
             public ServerPlayerHasJoined(PacketReader packet){
                 player_id = packet.DeserializeByte();
                 username = packet.DeserializeString();
+            }
+        }
+        public class ServerPlayerHasLeft : SerializablePacket{
+            public byte player_id;
+            public ServerPlayerHasLeft(byte player_id){
+                this.player_id = player_id;
+            }
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ServerPlayerHasLeft);
+                packet.SerializeByte(player_id);
+                return packet.GetData();
+            }
+            public ServerPlayerHasLeft(PacketReader packet){
+                player_id = packet.DeserializeByte();
             }
         }
     }
