@@ -4,13 +4,16 @@ using System.Linq;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
+using PimDeWitte.UnityMainThreadDispatcher;
 using RCM_Coop.Network;
 using RCM_Coop.Network.Helpers;
 using TestMod;
-using static System.Collections.Specialized.BitVector32;
 using static LandscapeGenerator;
+using static Profiler;
+using static RCM_Coop.EntitiesManager;
 using static RCM_Coop.Network.GameProtocols;
 using static RCM_Coop.Network.GameProtocols.ServerJoinResponseFailed;
+using static RCM_Coop.Network.PlayerManager;
 
 namespace RCM_Coop
 {
@@ -21,14 +24,13 @@ namespace RCM_Coop
         PlayerManager players;
         byte last_player_id = 1;
         byte NewPlayerID() => last_player_id++;
-        GameServer(Session session){
+        public GameServer(Session session){
             this.session = session;
             players = new PlayerManager();
             players.AddOurselves(0);
-
-            session.data_recieved_callback = OnDataReceived;
-            session.connection_terminated_callback = OnConnectionTerminated;
-            session.connection_opened_callback = OnConnectionOpened;
+            session.data_recieved_callback = RouteOnDataRecieved;
+            session.connection_terminated_callback = RouteOnConnectionTerminated;
+            session.connection_opened_callback = RouteOnConnectionOpened;
         }
 
 
@@ -36,12 +38,14 @@ namespace RCM_Coop
 
         HashSet<TcpClient> unconnected_clients = new();
 
-        struct client_id_struct { public TcpClient client; public byte id; }
+        class client_id_struct { public TcpClient client; public byte id; public bool is_ingame; }
         List<client_id_struct> clients = new();
         bool IsAuthenticated(TcpClient client){
             foreach (var item in clients)
                 if (item.client == client)
                     return true;
+
+            RCMManager.Log($"[Co-op] client failed authentication check. {client.Client.RemoteEndPoint}");
             return false;
         }
         byte GetCLientId(TcpClient client){
@@ -50,48 +54,77 @@ namespace RCM_Coop
                     return item.id;
             return 255;
         }
+        void UpdateClientStatus(TcpClient client){
+            foreach (var item in clients)
+                if (item.client == client){
+                    item.is_ingame = true;
+                    return;
+            }
+            RCMManager.Log($"[Co-op] couldn't find client to update status of... {client.Client.RemoteEndPoint}");
+        }
 
+        void RouteOnDataRecieved(byte[] data, TcpClient client){
+            UnityMainThreadDispatcher.Enqueue(() => { OnDataReceived(data, client); });
+        }
+        void RouteOnConnectionTerminated(TcpClient client){
+            UnityMainThreadDispatcher.Enqueue(() => { OnConnectionTerminated(client); });
+        }
+        void RouteOnConnectionOpened(TcpClient client){
+            UnityMainThreadDispatcher.Enqueue(() => { OnConnectionOpened(client); });
+        }
         void OnDataReceived(byte[] data, TcpClient client){
             RCMManager.Log($"[Co-op] Received {data.Length} bytes from {client.Client.RemoteEndPoint}");
-            
-            foreach (var packet in DeserializePackets(data))
-                switch (packet){
-                    case ClientJoinRequest e:
-                        if (!unconnected_clients.Contains(client)){
-                            RCMManager.Log($"[Co-op] client attempted to connect but was not in our unconnected clients list: {client.Client.RemoteEndPoint}");
-                            session.SendTCP(new ServerJoinResponseFailed(JoinError.already_connected), client);
-                            CloseAfterDelay(client, 1000);
-                        } else{ 
-                            // check password
-                            if (!string.IsNullOrWhiteSpace(session_password) && session_password != e.password){
-                                RCMManager.Log($"[Co-op] client attempted to connect but bad password: '{e.password}' client: {client.Client.RemoteEndPoint}");
-                                session.SendTCP(new ServerJoinResponseFailed(JoinError.bad_password), client);
+            try{
+                foreach (var packet in DeserializePackets(data))
+                    switch (packet){
+                        case ClientJoinRequest e:
+                            if (!unconnected_clients.Contains(client)){
+                                RCMManager.Log($"[Co-op] client attempted to connect but was not in our unconnected clients list: {client.Client.RemoteEndPoint}");
+                                session.SendTCP(new ServerJoinResponseFailed(JoinError.already_connected), client);
                                 CloseAfterDelay(client, 1000);
-                            }
-                            // check username
-                            else if (!players.IsUsernameTaken(e.username) || string.IsNullOrWhiteSpace(e.username)){
-                                RCMManager.Log($"[Co-op] client attempted to connect but username already taken: '{e.username}' client: {client.Client.RemoteEndPoint}");
-                                session.SendTCP(new ServerJoinResponseFailed(JoinError.username_taken), client);
-                                CloseAfterDelay(client, 1000);
-                            }
-                            // otherwise successfully joined, send join response
-                            else{
-                                RCMManager.Log($"[Co-op] client joined: '{e.username}' client: {client.Client.RemoteEndPoint}");
+                            } else{ 
+                                // check password
+                                if (!string.IsNullOrWhiteSpace(session_password) && session_password != e.password){
+                                    RCMManager.Log($"[Co-op] client attempted to connect but bad password: '{e.password}' client: {client.Client.RemoteEndPoint}");
+                                    session.SendTCP(new ServerJoinResponseFailed(JoinError.bad_password), client);
+                                    CloseAfterDelay(client, 1000);
+                                }
+                                // check username
+                                else if (!players.IsUsernameTaken(e.username) || string.IsNullOrWhiteSpace(e.username)){
+                                    RCMManager.Log($"[Co-op] client attempted to connect but username already taken: '{e.username}' client: {client.Client.RemoteEndPoint}");
+                                    session.SendTCP(new ServerJoinResponseFailed(JoinError.username_taken), client);
+                                    CloseAfterDelay(client, 1000);
+                                }
+                                // otherwise successfully joined, send join response
+                                else{
+                                    RCMManager.Log($"[Co-op] client joined: '{e.username}' client: {client.Client.RemoteEndPoint}");
 
-                                byte allocated_id = NewPlayerID();
-                                session.SendTCP(new ServerJoinResponseOk(allocated_id), client);
-                                foreach (var player in players.GetPlayersList())
-                                    session.SendTCP(new ServerPlayerHasJoined(player.id, player.username), client);
-                                
-                                // add to linker & players
-                                clients.Add(new() { client = client, id = allocated_id });
-                                players.AddPlayer(e.username, allocated_id);
+                                    byte allocated_id = NewPlayerID();
+                                    session.SendTCP(new ServerJoinResponseOk(allocated_id), client);
+                                    foreach (var player in players.GetPlayersList())
+                                        session.SendTCP(new ServerPlayerHasJoined(player.id, player.username), client);
+                                    // send to everyone
+                                    session.SendTCP(new ServerPlayerHasJoined(allocated_id, e.username));
+                                    // add to linker & players
+                                    clients.Add(new() { client = client, id = allocated_id, is_ingame = false });
+                                    players.AddPlayer(e.username, allocated_id);
+                                }
+                                unconnected_clients.Remove(client);
                             }
-                            unconnected_clients.Remove(client);
-                        }
-                        break;
-                    case ServerPlayerHasJoined e:
-                        break;
+                            break;
+                        case ClientMapLoaded e:
+                            if (IsAuthenticated(client)){
+                                RCMManager.Log($"[Co-op] client said green to go, sending all entity data: {packet.GetType().Name}");
+                                session.SendTCP(new ServerFullEntityData(EntitiesManager.CompileEntities()), client);
+                                // update player status to now be in game
+                                UpdateClientStatus(client);
+                            }
+                            break;
+                        default:
+                            RCMManager.Log($"[Co-op] recieved packet of unsupported type: {packet.GetType().Name}");
+                            break;
+            }} catch (Exception ex){
+                RCMManager.Log($"[Co-op] failed to read recieved packets: {ex.Message} callstack: {ex.StackTrace}");
             }
         }
         void OnConnectionTerminated(TcpClient client){
@@ -126,55 +159,15 @@ namespace RCM_Coop
         }
 
 
-        enum entity_tags{
-            Player,
-            Ai,
-            Neutral,
-            WorldMesh,
-            World,
-            Button
+
+        public void SendPacketToAuthenticated(SerializablePacket packet){
+            foreach (var item in clients)
+                session.SendTCP(packet, item.client);
         }
-        string TagFromEnum(entity_tags tag){
-            switch (tag){
-                case entity_tags.Player: return Tags.Player;
-                case entity_tags.Ai: return Tags.Ai;
-                case entity_tags.Neutral: return Tags.Neutral;
-                case entity_tags.WorldMesh: return Tags.WorldMesh;
-                case entity_tags.World: return Tags.World;
-                case entity_tags.Button: return Tags.Button;
-                default: return "";
-            }
-        }
-        entity_tags EnumFromTag(string tag){
-            switch (tag){
-                case Tags.Player: return entity_tags.Player;
-                case Tags.Ai: return entity_tags.Ai;
-                case Tags.Neutral: return entity_tags.Neutral;
-                case Tags.WorldMesh: return entity_tags.WorldMesh;
-                case Tags.World: return entity_tags.World;
-                case Tags.Button: return entity_tags.Button;
-                default: return entity_tags.Neutral;
-            }
-        }
-
-
-        struct entity_state{
-            public ushort network_id;
-            public uint entity_id;
-            public float pos_x;
-            public float pos_y;
-            public float pos_z;
-            public float rot_yaw;
-            public float scale;
-            public entity_tags tag;
-
-        }
-
-
-        struct jip_gamestate
-        {
-            List<entity_state> entities;
-
+        public void SendPacketToInGame(SerializablePacket packet){
+            foreach (var item in clients)
+                if (item.is_ingame)
+                    session.SendTCP(packet, item.client);
         }
 
     }

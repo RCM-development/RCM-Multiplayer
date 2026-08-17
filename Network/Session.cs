@@ -8,6 +8,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 using TestMod;
+using static Profiler;
 using static RCM_Coop.Network.GameProtocols;
 namespace RCM_Coop{
 
@@ -52,12 +53,14 @@ namespace RCM_Coop{
         public async void SendTCP(SerializablePacket packet, TcpClient target) => await SendTCP(packet.Serialize(), target);
         protected virtual async void SendTCP(byte[] data) { }
         protected async Task SendTCP(byte[] data, TcpClient target){
+            RCMManager.Log($"[Co-op] sending packet of size: {data.Length}");
             if (data.Length > MAX_PACKET_SIZE){
                 RCMManager.Log("Data too large for TCP packet, cant send.");
                 return;
             }
 
-            try{ if (target != null && is_alive) await target.GetStream().WriteAsync(data, 0, data.Length);
+            try
+            { if (target != null && is_alive) await target.GetStream().WriteAsync(data, 0, data.Length);
             } catch (Exception ex) { RCMManager.Log("Error sending TCP message: " + ex.Message); }
         }
         public Action<byte[], TcpClient> data_recieved_callback;

@@ -8,13 +8,18 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 using BepInEx;
+using BepInEx.Bootstrap;
 using HarmonyLib;
 using Microsoft.Win32;
+using PimDeWitte.UnityMainThreadDispatcher;
+using RCM_Coop.Network;
 using Shapes;
 using SmartTutorial;
 using TestMod;
 using UnityEngine;
 using UnityEngine.Profiling;
+using UnityEngine.UIElements;
+using static RCM_Coop.Network.GameProtocols;
 namespace RCM_Coop{
 
     [BepInDependency(RCMManager.IDENTIFIER, BepInDependency.DependencyFlags.HardDependency)]
@@ -22,8 +27,13 @@ namespace RCM_Coop{
     internal class CoopManager : BaseUnityPlugin{
         const string IDENTIFIER = "RCM.plugins.coop";
         static RCMModUI mod;
+        public static CoopManager coop;
         private void Awake(){
             new Harmony(IDENTIFIER).PatchAll();
+            coop = this;
+            DontDestroyOnLoad(this.gameObject);
+            Chainloader.ManagerObject.hideFlags = HideFlags.HideAndDontSave;
+
             RCMManager.ConnectMod("Co-op").ContinueWith(t => {
                 mod = t.Result;
 
@@ -31,7 +41,12 @@ namespace RCM_Coop{
 
             }, TaskScheduler.FromCurrentSynchronizationContext());
         }
+        private void Update(){
+            UnityMainThreadDispatcher.Update();
+        }
+
         static void UpdateUI(){
+            mod.ClearFields();
             if (is_connecting)
             {
                 mod.CreateLabelField("connecting...");
@@ -49,6 +64,7 @@ namespace RCM_Coop{
                 else
                 {
                     mod.CreateLabelField("running as client");
+                    mod.CreateButtonField("request data", RequestEntityData);
                 }
                 mod.CreateButtonField("disconnect", BeginDisconnect);
             }
@@ -57,7 +73,10 @@ namespace RCM_Coop{
 
         static bool is_connecting = false;
         static Session session = null;
-        static bool is_client = session?.is_server == false;
+        static bool is_client => session?.is_server == false;
+
+        static GameServer game_server = null;
+        static GameClient game_client = null;
 
         static async void BeginConnect(){
             is_connecting = true;
@@ -66,11 +85,11 @@ namespace RCM_Coop{
             session = await Session.StartAutoAsync();
             if (session.is_server)
             {
-
+                game_server = new(session);
             }
             else
             {
-
+                game_client = new(session);
             }
             is_connecting = false;
             UpdateUI();
@@ -79,9 +98,25 @@ namespace RCM_Coop{
         {
             if (session != null)
             {
+                game_server = null;
+                game_client = null;
                 session.Terminate();
                 session = null;
                 UpdateUI();
+            }
+        }
+        static void RequestEntityData()
+        {
+            RCMManager.Log("entity button pressed");
+            if (game_client != null)
+                game_client.SendMapLoadedRequest();
+        }
+
+        public static bool IsServerUp() => (game_server != null & session != null);
+        public static void SendServerInGamePacket(SerializablePacket packet){
+            if (IsServerUp())
+            {
+                game_server.SendPacketToInGame(packet);
             }
         }
 
@@ -121,6 +156,25 @@ namespace RCM_Coop{
                 return true;
             }
         }
+        // methods for clients to call to bypass client restrictions !!
+        [HarmonyPatch(typeof(EntityFactory), "InstantiateEntity")]
+        public static class Reverse_InstantiateEntity{
+            [HarmonyReversePatch]
+            [HarmonyPatch(typeof(EntityFactory), "InstantiateEntity")]
+            public static EntityController Original(string entityId, Vector3 position, EntityController originEntity, string tag, string name, Transform parentTransform, UnitRole additionalRoles, bool hasBeenCalledFromAbove, string instantiationInfo){
+                throw new NotImplementedException("Stub for reverse patch");
+            }
+        }
+        [HarmonyPatch(typeof(EntityFactory), "InstantiateEntityFromPrefab")]
+        public static class Reverse_InstantiateEntityFromPrefab{
+            [HarmonyReversePatch]
+            [HarmonyPatch(typeof(EntityFactory), "InstantiateEntityFromPrefab")]
+            public static void Original(GameObject prefab, Vector3 position, Quaternion rotation, Vector3 scale, string tag, string instantiationInfo){
+                throw new NotImplementedException("Stub for reverse patch");
+            }
+        }
+
+
         // this stubs out engineer and entities spawned at start via hacks
         [HarmonyPatch(typeof(SetupPlayerStart), "SpawnStartEntities")]
         public static class Patch_SetupPlayerStart_SpawnStartEntities{
@@ -172,7 +226,8 @@ namespace RCM_Coop{
         public static class Patch_EntityController_OnHasBeenInstantiated{
             [HarmonyPrefix]
             public static bool Prefix(EntityController __instance, bool hasBeenCalledFromAbove){
-                EntitiesManager.EntitySpawned(__instance, hasBeenCalledFromAbove);
+                // skip entity management if not server, as client recieves all relevant stuff via the sync'd session data
+                if (!is_client) EntitiesManager.EntitySpawned(__instance, hasBeenCalledFromAbove);
                 return true;
         }}
         
@@ -180,11 +235,21 @@ namespace RCM_Coop{
         public static class Patch_EntityController_Destroy{
             [HarmonyPrefix]
             public static bool Prefix(EntityController __instance, bool withoutTriggeringDestructionActions, EntityController originator){
-                EntitiesManager.EntityDestroyed(__instance, withoutTriggeringDestructionActions, originator);
                 // we dont want clients killing units on their own as this would desync a lot of stuff
                 if (is_client) return false;
+                EntitiesManager.EntityDestroyed(__instance, withoutTriggeringDestructionActions, originator);
                 return true;
         }}
+        [HarmonyPatch(typeof(EntityController), "Destroy")]
+        public static class Reverse_EntityController_Destroy{
+            [HarmonyReversePatch]
+            [HarmonyPatch(typeof(EntityController), "Destroy")]
+            public static void Original(EntityController __instance, bool withoutTriggeringDestructionActions, EntityController originator){
+                // Harmony replaces this with the original method body
+                throw new NotImplementedException("Stub for reverse patch");
+            }
+        }
+
 
 
 

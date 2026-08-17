@@ -18,7 +18,11 @@ namespace RCM_Coop.Network{
             our_player_id = id;
         }
         public byte GetOurPlayerID() => our_player_id;
-        public void AddPlayer(string username, byte id) => players.Add(new() { username = username, id = id });
+        public void AddPlayer(string username, byte id){
+            if (id != GetOurPlayerID())
+                players.Add(new() { username = username, id = id });
+        }
+            
         public void RemovePlayer(byte id){
             for (int i = 0; i < players.Count; i++){
                 if (players[i].id == id){
