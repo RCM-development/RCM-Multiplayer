@@ -26,6 +26,8 @@ namespace RCM_Coop.Network{
 
             ClientMapLoaded, // {nil}
 
+            ServerEntitiesPositionUpdate, // {}
+
             server_game_status_loading, // includes map stage info for client to join & generate off of
             server_game_status_waiting, // includes initial game state data in packet
             server_game_status_started,
@@ -48,6 +50,7 @@ namespace RCM_Coop.Network{
                     case proto.ServerFullEntityData:        yield return new ServerFullEntityData(packet); break;
                     case proto.ServerUnitSpawned:           yield return new ServerUnitSpawned(packet); break;
                     case proto.ServerUnitDestroyed:         yield return new ServerUnitDestroyed(packet); break;
+                    case proto.ServerEntitiesPositionUpdate: yield return new ServerEntitiesPositionUpdate(packet); break;
                     default: RCMManager.Log($"[Co-op] deserialized bad protocol value: {(byte)current_proto}"); yield break;
             }}
         }
@@ -260,6 +263,53 @@ namespace RCM_Coop.Network{
                 parent_id = (ushort)packet.DeserializeShort();
                 originator_id = (ushort)packet.DeserializeShort();
                 dont_use_destruction_effects = packet.DeserializeByte() > 0;
+            }
+        }
+        public class ServerEntitiesPositionUpdate : SerializablePacket{
+            public struct EntityPosition{
+                public ushort network_id;
+                public float pos_x;
+                public float pos_y;
+                public float pos_z;
+            }
+            public List<EntityPosition> positions;
+            public ServerEntitiesPositionUpdate(List<EntityPosition> positions){
+                this.positions = positions;
+            }
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ServerEntitiesPositionUpdate);
+                packet.SerializeShort((short)positions.Count);
+                foreach (EntityPosition item in positions){
+                    packet.SerializeShort((short)item.network_id);
+                    // we're going to serialize all floats as floats as fixed numbers 
+                    // -3276.8 to 3276.7 (0.1 intervals)
+                    int x = (int)(item.pos_x * 10);
+                    int y = (int)(item.pos_y * 10);
+                    int z = (int)(item.pos_z * 10);
+                    if (x > short.MaxValue) x = short.MaxValue;
+                    else if (x < short.MinValue) x = short.MinValue;
+                    if (y > short.MaxValue) y = short.MaxValue;
+                    else if (y < short.MinValue) y = short.MinValue;
+                    if (z > short.MaxValue) z = short.MaxValue;
+                    else if (z < short.MinValue) z = short.MinValue;
+                    packet.SerializeShort((short)x);
+                    packet.SerializeShort((short)y);
+                    packet.SerializeShort((short)z);
+                }
+                return packet.GetData();
+            }
+            public ServerEntitiesPositionUpdate(PacketReader packet){
+                positions = new();
+                short pos_count = packet.DeserializeShort();
+                for (int i = 0; i < pos_count; i++){
+                    EntityPosition entity = new EntityPosition();
+                    entity.network_id = (ushort)packet.DeserializeShort();
+                    entity.pos_x = packet.DeserializeShort() / 10.0f;
+                    entity.pos_y = packet.DeserializeShort() / 10.0f;
+                    entity.pos_z = packet.DeserializeShort() / 10.0f;
+                    positions.Add(entity);
+                }
             }
         }
     }

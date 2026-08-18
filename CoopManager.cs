@@ -43,6 +43,7 @@ namespace RCM_Coop{
         }
         private void Update(){
             UnityMainThreadDispatcher.Update();
+            EntitiesManager.Update();
         }
 
         static void UpdateUI(){
@@ -241,7 +242,18 @@ namespace RCM_Coop{
                 throw new NotImplementedException("Stub for reverse patch");
             }
         }
-        
+
+        [HarmonyPatch(typeof(EntityController), "UpdateCachedPosition")]
+        public static class Patch_EntityController_UpdateCachedPosition
+        {
+            [HarmonyPrefix]
+            public static bool Prefix(EntityController __instance){
+                // cleints dont need to track this
+                if (!is_client) EntitiesManager.NotifyEntityMoved(__instance);
+                return true;
+            }
+        }
+
         [HarmonyPatch(typeof(SpawnObject), "RunForEveryIdentifiedEntity")]
         public static class Patch_SpawnObject_RunForEveryIdentifiedEntity{
             [HarmonyPrefix]

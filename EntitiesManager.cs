@@ -8,6 +8,7 @@ using UnityEngine;
 using UnityEngine.UIElements;
 using static RCM_Coop.CoopManager;
 using static RCM_Coop.Network.GameProtocols;
+using static RCM_Coop.Network.GameProtocols.ServerEntitiesPositionUpdate;
 using static RCM_Coop.Network.GameProtocols.ServerFullEntityData;
 
 namespace RCM_Coop{
@@ -18,8 +19,62 @@ namespace RCM_Coop{
         static uint entities_assigned_count = 0;
         const uint MAX_ENTITY_IDS = 4096;
         static EntityController[] NetworkedEntities = new EntityController[MAX_ENTITY_IDS];
+        static EntityServerInfo[] EntityServerInfos = new EntityServerInfo[MAX_ENTITY_IDS];
         static Dictionary<EntityController, uint> NetowrkedEntityIDs = new Dictionary<EntityController, uint>();
         
+        // only needed for host
+        struct EntityServerInfo{
+            public EntityServerInfo(){}
+            public bool position_updated = false;
+        }
+        public static void NotifyEntityMoved(EntityController entity){
+            ushort id = IdFromEntity(entity);
+            if (id != 0xffff){
+                EntityServerInfos[id].position_updated = true;
+            }
+        }
+        private static float accumulator = 0f;
+        private const float interval = 0.1f; // 100 ms
+        public static void Update(){
+            float dt = Time.unscaledDeltaTime;
+            accumulator += dt;
+            if (accumulator >= interval){
+                accumulator -= interval;  
+                // check if we're in game
+                // for now we'll just do entities assigned count
+                if (entities_assigned_count > 0 && CoopManager.IsServerUp()){
+                    List<EntityPosition> positions = new();
+                    foreach (var entity_struct in IterateNetworkedEntities()){
+                        uint id = entity_struct.Key;
+                        EntityController entity = entity_struct.Value;
+                        if (EntityServerInfos[id].position_updated){
+                            EntityServerInfos[id].position_updated = false;
+                            positions.Add(new EntityPosition() { network_id = (ushort)id, pos_x = entity.gameObject.transform.position.x, pos_y = entity.gameObject.transform.position.y, pos_z = entity.gameObject.transform.position.z });
+                        }
+                    }
+                    if (positions.Count > 0){
+                        SendServerInGamePacket(new ServerEntitiesPositionUpdate(positions));
+                    }
+                }
+            }
+        }
+        public static void RecievePositionUpdates(List<EntityPosition> positions)
+        {
+            foreach (var item in positions){
+                EntityController entity = NetworkedEntities[item.network_id];
+                if (entity != null)
+                {
+                    entity.gameObject.transform.position = new Vector3(item.pos_x, item.pos_y, item.pos_z);
+                    entity.UpdateCachedPosition();
+                }
+                else
+                {
+                    RCMManager.Log($"[Co-op] position sync for entity that doesn't exist. id: {item.network_id}");
+                }
+            }
+        }
+
+
         public static IEnumerable<KeyValuePair<uint, EntityController>> IterateNetworkedEntities(){
             for  (uint i = 0; i < entities_highest_id; i++){
                 EntityController entity = NetworkedEntities[i];

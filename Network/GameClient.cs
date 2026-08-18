@@ -74,7 +74,12 @@ namespace RCM_Coop.Network{
                             RCMManager.Log($"[Co-op] recieved entity destroyed event");
                             EntitiesManager.RecievedDestroy(e.parent_id, e.originator_id, e.dont_use_destruction_effects);
                             break;
-            }} catch (Exception ex){
+                        case ServerEntitiesPositionUpdate e:
+                            RCMManager.Log($"[Co-op] recieved entity pos update event");
+                            EntitiesManager.RecievePositionUpdates(e.positions);
+                            break;
+                    }
+            } catch (Exception ex){
                 RCMManager.Log($"[Co-op] failed to read recieved packets: {ex.Message} callstack: {ex.StackTrace}");
             }
         }
