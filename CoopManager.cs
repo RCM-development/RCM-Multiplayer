@@ -145,7 +145,13 @@ namespace RCM_Coop{
                     return false;
                 }
                 return true;
-        }}
+            }
+            [HarmonyReversePatch]
+            [HarmonyPatch(typeof(EntityFactory), "InstantiateEntity")]
+            public static EntityController Original(string entityId, Vector3 position, EntityController originEntity, string tag, string name, Transform parentTransform, UnitRole additionalRoles, bool hasBeenCalledFromAbove, string instantiationInfo){
+                throw new NotImplementedException("Stub for reverse patch");
+            }
+        }
         // this stubs out all entities created at map generation
         [HarmonyPatch(typeof(EntityFactory), "InstantiateEntityFromPrefab")]
         public static class Patch_InstantiateEntityFromPrefab_Stub{
@@ -155,18 +161,6 @@ namespace RCM_Coop{
                     return false;
                 return true;
             }
-        }
-        // methods for clients to call to bypass client restrictions !!
-        [HarmonyPatch(typeof(EntityFactory), "InstantiateEntity")]
-        public static class Reverse_InstantiateEntity{
-            [HarmonyReversePatch]
-            [HarmonyPatch(typeof(EntityFactory), "InstantiateEntity")]
-            public static EntityController Original(string entityId, Vector3 position, EntityController originEntity, string tag, string name, Transform parentTransform, UnitRole additionalRoles, bool hasBeenCalledFromAbove, string instantiationInfo){
-                throw new NotImplementedException("Stub for reverse patch");
-            }
-        }
-        [HarmonyPatch(typeof(EntityFactory), "InstantiateEntityFromPrefab")]
-        public static class Reverse_InstantiateEntityFromPrefab{
             [HarmonyReversePatch]
             [HarmonyPatch(typeof(EntityFactory), "InstantiateEntityFromPrefab")]
             public static void Original(GameObject prefab, Vector3 position, Quaternion rotation, Vector3 scale, string tag, string instantiationInfo){
@@ -239,9 +233,7 @@ namespace RCM_Coop{
                 if (is_client) return false;
                 EntitiesManager.EntityDestroyed(__instance, withoutTriggeringDestructionActions, originator);
                 return true;
-        }}
-        [HarmonyPatch(typeof(EntityController), "Destroy")]
-        public static class Reverse_EntityController_Destroy{
+            }
             [HarmonyReversePatch]
             [HarmonyPatch(typeof(EntityController), "Destroy")]
             public static void Original(EntityController __instance, bool withoutTriggeringDestructionActions, EntityController originator){
@@ -249,7 +241,16 @@ namespace RCM_Coop{
                 throw new NotImplementedException("Stub for reverse patch");
             }
         }
-
+        
+        [HarmonyPatch(typeof(SpawnObject), "RunForEveryIdentifiedEntity")]
+        public static class Patch_SpawnObject_RunForEveryIdentifiedEntity{
+            [HarmonyPrefix]
+            public static bool Prefix(SpawnObject __instance, EntityController entity, EventPayload payload, int index){
+                // if the action wants to spawn an entity then we say no since network will sync it anyway...
+                if (__instance.initEntityController && is_client) return false;
+                return true;
+            }
+        }
 
 
 

@@ -127,7 +127,7 @@ namespace RCM_Coop{
             if (originator_id != 0xffff && originator == null)
                 RCMManager.Log($"[Co-op] entity {entity.entityId} destroyed by originator:{originator_id} but couldn't find target network id in our list");
 
-            Reverse_EntityController_Destroy.Original(entity, withoutTriggeringDestructionActions, originator);
+            Patch_EntityController_Destroy.Original(entity, withoutTriggeringDestructionActions, originator);
             EntityDestroyed(entity, false, originator);
         }
 
@@ -287,7 +287,7 @@ namespace RCM_Coop{
                 }
 
                 if (state is spawned_entity_state spawned_state3)
-                    result = Reverse_InstantiateEntity.Original(
+                    result = Patch_InstantiateEntity_Stub.Original(
                         state.entity_id,
                         new Vector3(spawned_state3.pos_x, spawned_state3.pos_y, spawned_state3.pos_z),
                         parent,
@@ -299,7 +299,7 @@ namespace RCM_Coop{
                         "co-op sync"
                     );
                 else
-                    result = Reverse_InstantiateEntity.Original(
+                    result = Patch_InstantiateEntity_Stub.Original(
                         state.entity_id,
                         new Vector3(state.pos_x, state.pos_y, state.pos_z),
                         parent,
