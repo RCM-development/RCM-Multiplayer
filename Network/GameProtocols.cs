@@ -46,9 +46,10 @@ namespace RCM_Coop.Network{
             // end WIP entity protocols
             // then we have other gameplay protocols
             //ServerBuildingSpawning,
-            //ServerTimeSlow,
-            //ServerTimeNormal,
-            //ServerTimePaused,
+            ServerTimeSlow,
+            ServerTimeNormal,
+            ServerTimePaused,
+            ServerTimeUnpaused,
             //
             ClientMapLoaded, // {nil}
             ServerEntitiesPositionUpdate, // {}
@@ -87,6 +88,10 @@ namespace RCM_Coop.Network{
                     case proto.ServerUnitProduce:               yield return new ServerUnitProduce(packet); break;
                     case proto.ServerUnitAbortProduction:       yield return new ServerUnitAbortProduction(packet); break;
                     case proto.ServerUnitChargeMana:            yield return new ServerUnitChargeMana(packet); break;
+                    case proto.ServerTimeSlow:                  yield return new ServerTimeSlow(packet); break;
+                    case proto.ServerTimeNormal:                yield return new ServerTimeNormal(packet); break;
+                    case proto.ServerTimePaused:                yield return new ServerTimePaused(packet); break;
+                    case proto.ServerTimeUnpaused:              yield return new ServerTimeUnpaused(packet); break;
                     default: RCMManager.Log($"[Co-op] deserialized bad protocol value: {(byte)current_proto}"); yield break;
             }}
         }
@@ -785,6 +790,42 @@ namespace RCM_Coop.Network{
                 new_mana_value = DeserializeSignedStat(packet);
                 display_delta = packet.DeserializeByte() > 0;
             }
+        }
+        public class ServerTimeSlow : SerializablePacket{ 
+            public ServerTimeSlow(){}
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ServerTimeSlow);
+                return packet.GetData();
+            }
+            public ServerTimeSlow(PacketReader packet){}
+        }
+        public class ServerTimeNormal : SerializablePacket{ 
+            public ServerTimeNormal(){}
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ServerTimeNormal);
+                return packet.GetData();
+            }
+            public ServerTimeNormal(PacketReader packet){}
+        }
+        public class ServerTimePaused : SerializablePacket{ 
+            public ServerTimePaused(){}
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ServerTimePaused);
+                return packet.GetData();
+            }
+            public ServerTimePaused(PacketReader packet){}
+        }
+        public class ServerTimeUnpaused : SerializablePacket{ 
+            public ServerTimeUnpaused(){}
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ServerTimeUnpaused);
+                return packet.GetData();
+            }
+            public ServerTimeUnpaused(PacketReader packet){}
         }
 
 

@@ -137,6 +137,19 @@ namespace RCM_Coop.Network{
                         case ServerUnitChargeMana e:
                             if (e.entity != null) Patch_EntityController_ChargeMana.Original(e.entity, e.new_mana_value, e.display_delta); 
                             break;
+
+                        case ServerTimeSlow e:
+                            Patch_Navigator_SlowDown.Original(true);
+                            break;
+                        case ServerTimeNormal e:
+                            Patch_Navigator_ResetToDefaultSpeed.Original();
+                            break;
+                        case ServerTimePaused e:
+                            Patch_Navigator_Pause.Original();
+                            break;
+                        case ServerTimeUnpaused e:
+                            Patch_Navigator_Unpause.Original();
+                            break;
                     }
             } catch (Exception ex){
                 RCMManager.Log($"[Co-op] failed to read recieved packets: {ex.Message} callstack: {ex.StackTrace}");

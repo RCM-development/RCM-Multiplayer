@@ -238,7 +238,6 @@ namespace RCM_Coop{
                 if (!is_client) EntitiesManager.EntitySpawned(__instance, hasBeenCalledFromAbove);
                 return true;
         }}
-        
         [HarmonyPatch(typeof(EntityController), "Destroy")] public static class Patch_EntityController_Destroy{
             [HarmonyPrefix] public static bool Prefix(EntityController __instance, bool withoutTriggeringDestructionActions, EntityController originator){
                 if (is_client) return false; EntitiesManager.EntityDestroyed(__instance, withoutTriggeringDestructionActions, originator); return true;
@@ -255,7 +254,7 @@ namespace RCM_Coop{
         }
 
 
-        
+        #region ENTITY STATE PATCHES
         [HarmonyPatch(typeof(EntityController), "ActivateSkill", new Type[] { typeof(Vector3) })] public static class Patch_EntityController_ActivateSkill_Vector3{
             [HarmonyPrefix]public static bool Prefix(EntityController __instance, Vector3 position){
                 if (is_client) return false; SendServerInGamePacket(new ServerUnitActivateSkillPosition(__instance, position)); return true;
@@ -304,8 +303,7 @@ namespace RCM_Coop{
             }
             [HarmonyReversePatch] public static void Original(EntityController __instance, EntityController entity) { throw new ree("err"); }
         }
-        [HarmonyPatch(typeof(EntityController), "Follow", new Type[] { typeof(Vector3), typeof(float) })]
-        public static class Patch_EntityController_Follow_Position{
+        [HarmonyPatch(typeof(EntityController), "Follow", new Type[] { typeof(Vector3), typeof(float) })] public static class Patch_EntityController_Follow_Position{
             [HarmonyPrefix] public static bool Prefix(EntityController __instance, Vector3 position, float distance){
                 if (is_client) return false; SendServerInGamePacket(new ServerUnitFollowPosition(__instance, position, distance)); return true;
             }
@@ -377,9 +375,34 @@ namespace RCM_Coop{
             }
             [HarmonyReversePatch] public static void Original(EntityController __instance, float amount, bool displayDeltaInBar) { throw new ree("err"); }
         }
+        #endregion
 
-
-
+        #region PAUSE GAME PATCHES
+        [HarmonyPatch(typeof(Navigator), "SlowDown")] public static class Patch_Navigator_SlowDown{
+            [HarmonyPrefix] public static bool Prefix(bool withMessage){
+                if (is_client) return false; SendServerInGamePacket(new ServerTimeSlow()); return true;
+            }
+            [HarmonyReversePatch] public static void Original(bool withMessage) { throw new ree("err"); }
+        }
+        [HarmonyPatch(typeof(Navigator), "ResetToDefaultSpeed")] public static class Patch_Navigator_ResetToDefaultSpeed{
+            [HarmonyPrefix] public static bool Prefix(){
+                if (is_client) return false; SendServerInGamePacket(new ServerTimeNormal()); return true;
+            }
+            [HarmonyReversePatch] public static void Original() { throw new ree("err"); }
+        }
+        [HarmonyPatch(typeof(Navigator), "Pause")] public static class Patch_Navigator_Pause{
+            [HarmonyPrefix] public static bool Prefix(){
+                if (is_client) return false; SendServerInGamePacket(new ServerTimePaused()); return true;
+            }
+            [HarmonyReversePatch] public static void Original() { throw new ree("err"); }
+        }
+        [HarmonyPatch(typeof(Navigator), "Unpause")] public static class Patch_Navigator_Unpause{
+            [HarmonyPrefix] public static bool Prefix(){
+                if (is_client) return false; SendServerInGamePacket(new ServerTimeUnpaused()); return true;
+            }
+            [HarmonyReversePatch] public static void Original() { throw new ree("err"); }
+        }
+        #endregion
 
     }
 }
