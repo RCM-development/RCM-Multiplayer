@@ -26,5 +26,8 @@ namespace RCM_Coop.Network.Helpers{
             written_data.Add((byte)((value >> 16) & 0xFF));
             written_data.Add((byte)((value >> 24) & 0xFF));
         }
+        public void SerializeFloat(float value){
+            written_data.AddRange(BitConverter.GetBytes(value));
+        }
     }
 }

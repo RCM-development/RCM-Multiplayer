@@ -34,5 +34,10 @@ namespace RCM_Coop.Network.Helpers{
             if (read_index > packet.Length) return 0;
             return packet[read_index-4] | (packet[read_index-3] << 8) | (packet[read_index-2] << 16) | (packet[read_index-1] << 24);
         }
+        public float DeserializeFloat(){
+            read_index += 4;
+            if (read_index > packet.Length) return 0;
+            return BitConverter.ToSingle(packet, read_index-4);
+        }
     }
 }

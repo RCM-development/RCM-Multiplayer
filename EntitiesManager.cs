@@ -21,7 +21,27 @@ namespace RCM_Coop{
         static EntityController[] NetworkedEntities = new EntityController[MAX_ENTITY_IDS];
         static EntityServerInfo[] EntityServerInfos = new EntityServerInfo[MAX_ENTITY_IDS];
         static Dictionary<EntityController, uint> NetowrkedEntityIDs = new Dictionary<EntityController, uint>();
-        
+        public static IEnumerable<KeyValuePair<uint, EntityController>> IterateNetworkedEntities(){
+            for  (uint i = 0; i < entities_highest_id; i++){
+                EntityController entity = NetworkedEntities[i];
+                if (entity != null)
+                    yield return new KeyValuePair<uint, EntityController>(i, NetworkedEntities[i]);
+        }}
+        public static ushort IdFromEntity(EntityController entity){
+            if (entity == null) return (ushort)0xffff; 
+            if (NetowrkedEntityIDs.TryGetValue(entity, out uint id)){
+                return (ushort)id;
+            }
+            //foreach (var entity_struct in IterateNetworkedEntities())
+            //    if (entity == entity_struct.Value) return (ushort)entity_struct.Key;
+            return (ushort)0xffff;
+        }
+        public static EntityController EntityFromId(int network_id){
+            if (network_id < 0 || network_id >= MAX_ENTITY_IDS) return null;
+            return NetworkedEntities[network_id];
+        }
+
+        #region ENTITY POSITION FORCE SYNC
         // only needed for host
         struct EntityServerInfo{
             public EntityServerInfo(){}
@@ -49,7 +69,7 @@ namespace RCM_Coop{
                         EntityController entity = entity_struct.Value;
                         if (EntityServerInfos[id].position_updated){
                             EntityServerInfos[id].position_updated = false;
-                            positions.Add(new EntityPosition() { network_id = (ushort)id, pos_x = entity.gameObject.transform.position.x, pos_y = entity.gameObject.transform.position.y, pos_z = entity.gameObject.transform.position.z });
+                            positions.Add(new EntityPosition() { entity = entity, pos = entity.gameObject.transform.position });
                         }
                     }
                     if (positions.Count > 0){
@@ -58,38 +78,21 @@ namespace RCM_Coop{
                 }
             }
         }
-        public static void RecievePositionUpdates(List<EntityPosition> positions)
-        {
+        public static void RecievePositionUpdates(List<EntityPosition> positions){
             foreach (var item in positions){
-                EntityController entity = NetworkedEntities[item.network_id];
-                if (entity != null)
-                {
-                    entity.gameObject.transform.position = new Vector3(item.pos_x, item.pos_y, item.pos_z);
-                    entity.UpdateCachedPosition();
+                if (item.entity != null){
+                    item.entity.gameObject.transform.position = item.pos;
+                    item.entity.UpdateCachedPosition();
                 }
                 else
                 {
-                    RCMManager.Log($"[Co-op] position sync for entity that doesn't exist. id: {item.network_id}");
+                    RCMManager.Log($"[Co-op] position sync for entity that doesn't exist.");
                 }
             }
         }
+        #endregion
 
-
-        public static IEnumerable<KeyValuePair<uint, EntityController>> IterateNetworkedEntities(){
-            for  (uint i = 0; i < entities_highest_id; i++){
-                EntityController entity = NetworkedEntities[i];
-                if (entity != null)
-                    yield return new KeyValuePair<uint, EntityController>(i, NetworkedEntities[i]);
-        }}
-        public static ushort IdFromEntity(EntityController entity){
-            if (NetowrkedEntityIDs.TryGetValue(entity, out uint id)){
-                return (ushort)id;
-            }
-            //foreach (var entity_struct in IterateNetworkedEntities())
-            //    if (entity == entity_struct.Value) return (ushort)entity_struct.Key;
-            return (ushort)0xffff;
-        }
-
+        #region ENTITY CREATION/DELETION
         public static void EntitySpawned(EntityController entity, bool called_from_above){
             if (entities_assigned_count >= MAX_ENTITY_IDS){
                 RCMManager.Log("[Co-op] totally networked entities has overflown. cannot network any more entities.");
@@ -168,35 +171,16 @@ namespace RCM_Coop{
 
             RCMManager.Log($"[Co-op] entity destroyed: {entity.entityId} id {network_id}");
         }
+        #endregion
 
-        public static void RecievedSpawn(EntityController entity, uint network_id)
-        {
-            EntitySpawnedAt(entity, network_id);
-        }
-        public static void RecievedDestroy(ushort entity_id, ushort originator_id, bool withoutTriggeringDestructionActions){
-            EntityController entity = NetworkedEntities[entity_id];
-            EntityController originator = NetworkedEntities[originator_id];
-
-            if (entity_id != 0xffff && entity == null)
-                RCMManager.Log($"[Co-op] entity id destroyed:{entity_id} but couldn't find target network id in our list");
-            if (originator_id != 0xffff && originator == null)
-                RCMManager.Log($"[Co-op] entity {entity.entityId} destroyed by originator:{originator_id} but couldn't find target network id in our list");
-
-            Patch_EntityController_Destroy.Original(entity, withoutTriggeringDestructionActions, originator);
-            EntityDestroyed(entity, false, originator);
-        }
-
-
-
+        #region ENTITY SERIALIZATION
         public class entity_state{
             public string entity_id;
             public ushort network_id;
             public ushort parent_controller_id;
             public ushort parent_transform_id;
             public ushort parent_transform_index;
-            public float pos_x;
-            public float pos_y;
-            public float pos_z;
+            public Vector3 pos;
             public float rot_yaw;
             public float scale;
             public enum entity_tags : byte{
@@ -275,68 +259,38 @@ namespace RCM_Coop{
                     if (parent_transform == null) RCMManager.Log($"[Co-op] could not resolve child node to attach sync'd entity to: '{state.entity_id}', transform parent: '{transform_parent.entityId}'");
             }}
 
-            //RCMManager.Log($"[Co-op] decomp [{state.network_id}] checkpoint 3");
-            //EntityController result;
-            //if (state is spawned_entity_state spawned_state)
-            //result = Reverse_InstantiateEntity.Original(
-            //    state.entity_id,
-            //    new Vector3(spawned_state.pos_x, spawned_state.pos_y, spawned_state.pos_z),
-            //    parent,
-            //    spawned_state.TagFromEnum(),
-            //    $"[{spawned_state.network_id}] {spawned_state.entity_id}",
-            //    parent_transform,
-            //    UnitRole.None,
-            //    spawned_state.spawned_from_above,
-            //    "co-op sync"
-            //);
-            //else result = Reverse_InstantiateEntity.Original(
-            //    state.entity_id,
-            //    new Vector3(state.pos_x, state.pos_y, state.pos_z),
-            //    parent,
-            //    state.TagFromEnum(),
-            //    $"[{state.network_id}] {state.entity_id}",
-            //    parent_transform,
-            //    UnitRole.None,
-            //    false,
-            //    "co-op sync"
-            //);
-
             //RCMManager.Log($"[Co-op] decomp [{state.network_id}] checkpoint 4");
             RCMManager.Log($"[Co-op] decomp [{state.network_id}] checkpoint 3 - START");
             EntityController result = null;
             try
             {
                 // Log state information
-                RCMManager.Log($"[Co-op] state type: {state.GetType().Name}");
-                RCMManager.Log($"[Co-op] state.network_id: {state.network_id}");
-                RCMManager.Log($"[Co-op] state.entity_id: {state.entity_id}");
-                RCMManager.Log($"[Co-op] state.pos: ({state.pos_x},{state.pos_y},{state.pos_z})");
-                // Log parent information
-                RCMManager.Log($"[Co-op] parent: {parent} parent_transform: {parent_transform}");
+                //RCMManager.Log($"[Co-op] state type: {state.GetType().Name}");
+                //RCMManager.Log($"[Co-op] state.network_id: {state.network_id}");
+                //RCMManager.Log($"[Co-op] state.entity_id: {state.entity_id}");
+                //RCMManager.Log($"[Co-op] state.pos: ({state.pos.p},{state.pos_y},{state.pos_z})");
+                //// Log parent information
+                //RCMManager.Log($"[Co-op] parent: {parent} parent_transform: {parent_transform}");
 
                 // Log tag
-                string tag = state is spawned_entity_state sss ? sss.TagFromEnum() : state.TagFromEnum();
-                RCMManager.Log($"[Co-op] tag: '{tag}'");
+                //string tag = state is spawned_entity_state sss ? sss.TagFromEnum() : state.TagFromEnum();
+                //RCMManager.Log($"[Co-op] tag: '{tag}'");
 
                 // Log EntityBalancingStore lookup
-                RCMManager.Log($"[Co-op] Attempting EntityBalancingStore.PrefabLocation for entityId: '{state.entity_id}'");
+                //RCMManager.Log($"[Co-op] Attempting EntityBalancingStore.PrefabLocation for entityId: '{state.entity_id}'");
                 string prefabLocation = EntityBalancingStore.PrefabLocation(state.entity_id);
                 RCMManager.Log($"[Co-op] prefabLocation result: '{prefabLocation}'");
 
                 // Log Resources.Load attempt
-                if (!string.IsNullOrEmpty(prefabLocation))
-                {
-                    RCMManager.Log($"[Co-op] Attempting Resources.Load: '{prefabLocation}'");
+                if (!string.IsNullOrEmpty(prefabLocation)){
+                    //RCMManager.Log($"[Co-op] Attempting Resources.Load: '{prefabLocation}'");
                     UnityEngine.Object resourceObj = Resources.Load(prefabLocation);
                     RCMManager.Log($"[Co-op] Resources.Load result: {resourceObj}");
-                    if (resourceObj == null)
-                    {
+                    if (resourceObj == null){
                         RCMManager.Log($"[Co-op] ERROR: Resources.Load returned null!");
                         return null;
                     }
-                }
-                else
-                {
+                }else{
                     RCMManager.Log($"[Co-op] ERROR: prefabLocation is empty/null!");
                     return null;
                 }
@@ -344,7 +298,7 @@ namespace RCM_Coop{
                 if (state is spawned_entity_state spawned_state3)
                     result = Patch_InstantiateEntity_Stub.Original(
                         state.entity_id,
-                        new Vector3(spawned_state3.pos_x, spawned_state3.pos_y, spawned_state3.pos_z),
+                        spawned_state3.pos,
                         parent,
                         spawned_state3.TagFromEnum(),
                         $"[{spawned_state3.network_id}] {spawned_state3.entity_id}",
@@ -356,7 +310,7 @@ namespace RCM_Coop{
                 else
                     result = Patch_InstantiateEntity_Stub.Original(
                         state.entity_id,
-                        new Vector3(state.pos_x, state.pos_y, state.pos_z),
+                        state.pos,
                         parent,
                         state.TagFromEnum(),
                         $"[{state.network_id}] {state.entity_id}",
@@ -366,7 +320,7 @@ namespace RCM_Coop{
                         "co-op sync"
                     );
 
-                RCMManager.Log($"[Co-op] decomp [{state.network_id}] checkpoint 4 - InstantiateEntity returned: {result}");
+                //RCMManager.Log($"[Co-op] decomp [{state.network_id}] checkpoint 4 - InstantiateEntity returned: {result}");
             }
             catch (Exception ex)
             {
@@ -374,12 +328,6 @@ namespace RCM_Coop{
                 RCMManager.Log($"[Co-op] Stack trace: {ex.StackTrace}");
                 throw;
             }
-
-
-
-
-
-
 
             if (result != null){
                 RecievedSpawn(result, state.network_id);
@@ -412,8 +360,8 @@ namespace RCM_Coop{
                 if (DecompileEntity(entity, false) == null)
                     RCMManager.Log($"[Co-op] couldn't create sync'd entity after 3rd attempt: {entity.entity_id}, id {entity.network_id}");
         }
-        static entity_state CompileEntity(EntityController entity, ushort id, entity_state state){
-            if (string.IsNullOrWhiteSpace(entity.entityId)){
+        static entity_state CompileEntity(EntityController entity, ushort id, entity_state state) {
+            if (string.IsNullOrWhiteSpace(entity.entityId)) {
                 RCMManager.Log($"[Co-op] cant properly serialize entity as it has no entity ID, name: {entity.gameObject.name}");
             }
             state.entity_id = entity.entityId;
@@ -425,16 +373,16 @@ namespace RCM_Coop{
             else state.parent_controller_id = (ushort)0xffff;
 
             // for now, check for transform parent, if there is we'll try to identify and then just get the child transform index
-            if (entity.gameObject.transform.parent != null){
+            if (entity.gameObject.transform.parent != null) {
                 EntityController transform_par_entity = entity.gameObject.transform.parent.GetComponentInParent<EntityController>();
-                if (transform_par_entity != null){
+                if (transform_par_entity != null) {
 
                     ushort transform_parent_id = EntitiesManager.IdFromEntity(transform_par_entity);
-                    if (transform_parent_id != 0xffff){
+                    if (transform_parent_id != 0xffff) {
 
                         int child_index = 0;
-                        int Traverse(Transform current){
-                            foreach (Transform child in current){
+                        int Traverse(Transform current) {
+                            foreach (Transform child in current) {
                                 if (entity.gameObject.transform.parent == child)
                                     return child_index;
 
@@ -446,31 +394,30 @@ namespace RCM_Coop{
                         }
 
                         int resulting_child_index = Traverse(transform_par_entity.gameObject.transform);
-                        if (resulting_child_index != -1 && resulting_child_index < 0xffff){
+                        if (resulting_child_index != -1 && resulting_child_index < 0xffff) {
                             state.parent_transform_id = transform_parent_id;
                             state.parent_transform_index = (ushort)resulting_child_index;
-                        }else{
+                        } else {
                             RCMManager.Log($"[Co-op] when serializing entity list, unable to find child transform index that we're attached to, entity: '{entity.entityId}', transform parent: '{transform_par_entity.entityId}'");
                             state.parent_transform_id = 0xffff;
                             state.parent_transform_index = 0xffff;
                         }
-                    }else{
+                    } else {
                         RCMManager.Log($"[Co-op] when serializing entity list, unable to get networked id from parent transform entity, entity: '{entity.entityId}', transform parent: '{transform_par_entity.entityId}'");
                         state.parent_transform_id = 0xffff;
                         state.parent_transform_index = 0xffff;
                     }
-                }else{
+                } else {
                     RCMManager.Log($"[Co-op] when serializing entity list, unable to find find entitycontroller component in any parent, entity: '{entity.entityId}'");
                     state.parent_transform_id = 0xffff;
                     state.parent_transform_index = 0xffff;
                 }
-            }else{
+            } else {
                 state.parent_transform_id = 0xffff;
                 state.parent_transform_index = 0xffff;
             }
-            state.pos_x = entity.gameObject.transform.position.x;
-            state.pos_y = entity.gameObject.transform.position.y;
-            state.pos_z = entity.gameObject.transform.position.z;
+            state.pos = entity.gameObject.transform.position;
+
             state.rot_yaw = entity.gameObject.transform.eulerAngles.y;
             state.scale = entity.gameObject.transform.localScale.x;
             state.EnumFromTag(entity.gameObject.tag);
@@ -486,5 +433,26 @@ namespace RCM_Coop{
 
             return entities;
         }
+        #endregion
+
+        public static void RecievedSpawn(EntityController entity, uint network_id)
+        {
+            EntitySpawnedAt(entity, network_id);
+        }
+        public static void RecievedDestroy(ushort entity_id, ushort originator_id, bool withoutTriggeringDestructionActions){
+            EntityController entity = NetworkedEntities[entity_id];
+            EntityController originator = NetworkedEntities[originator_id];
+
+            if (entity_id != 0xffff && entity == null)
+                RCMManager.Log($"[Co-op] entity id destroyed:{entity_id} but couldn't find target network id in our list");
+            if (originator_id != 0xffff && originator == null)
+                RCMManager.Log($"[Co-op] entity {entity.entityId} destroyed by originator:{originator_id} but couldn't find target network id in our list");
+
+            Patch_EntityController_Destroy.Original(entity, withoutTriggeringDestructionActions, originator);
+            EntityDestroyed(entity, false, originator);
+        }
+
+
+
     }
 }

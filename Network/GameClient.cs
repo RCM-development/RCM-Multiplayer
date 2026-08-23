@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using PimDeWitte.UnityMainThreadDispatcher;
 using RCM_Coop.Network.Helpers;
 using TestMod;
+using static RCM_Coop.CoopManager;
 using static RCM_Coop.Network.GameProtocols;
 namespace RCM_Coop.Network{
 
@@ -77,6 +78,64 @@ namespace RCM_Coop.Network{
                         case ServerEntitiesPositionUpdate e:
                             RCMManager.Log($"[Co-op] recieved entity pos update event");
                             EntitiesManager.RecievePositionUpdates(e.positions);
+                            break;
+
+                        case ServerUnitActivateSkillPosition e: 
+                            if (e.entity != null) Patch_EntityController_ActivateSkill_Vector3.Original(e.entity, e.pos); 
+                            break;
+                        case ServerUnitActivateSkillTarget e:
+                            if (e.entity != null && e.target != null) Patch_EntityController_ActivateSkill_Target.Original(e.entity, e.target); 
+                            break;
+                        case ServerUnitActivateSkill e:
+                            if (e.entity != null) Patch_EntityController_ActivateSkill_Int.Original(e.entity, e.count); 
+                            break;
+                        case ServerUnitAttackMovePosition e:
+                            if (e.entity != null) Patch_EntityController_AttackMove_Vector3.Original(e.entity, e.pos); 
+                            break;
+                        case ServerUnitAttackMoveTarget e:
+                            if (e.entity != null && e.target != null) Patch_EntityController_AttackMove_Target.Original(e.entity, e.target); 
+                            break;
+                        case ServerUnitAttack e:
+                            if (e.entity != null && e.target != null) Patch_EntityController_Attack.Original(e.entity, e.target); 
+                            break;
+                        case ServerUnitOnReadyToShoot e:
+                            if (e.entity != null && e.target != null) Patch_EntityController_OnReadyToShootOnTarget.Original(e.entity, e.target); 
+                            break;
+                        case ServerUnitFollowTarget e:
+                            if (e.entity != null && e.target != null) Patch_EntityController_Follow_Target.Original(e.entity, e.target); 
+                            break;
+                        case ServerUnitFollowPosition e:
+                            if (e.entity != null) Patch_EntityController_Follow_Position.Original(e.entity, e.pos, e.distance); 
+                            break;
+                        case ServerUnitStop e:
+                            if (e.entity != null) Patch_EntityController_Stop.Original(e.entity); 
+                            break;
+                        case ServerUnitTeleport e:
+                            if (e.entity != null) Patch_EntityController_Teleport.Original(e.entity, e.pos, e.dont_trigger_events); 
+                            break;
+                        case ServerUnitMoveTo e:
+                            if (e.entity != null) Patch_EntityController_MoveTo.Original(e.entity, e.pos, e.counts_as_move_command, e.restrictedToHeightLayer, e.clickPositionCell); 
+                            break;
+                        case ServerUnitRepairArmor e:
+                            if (e.entity != null) Patch_EntityController_RepairArmor.Original(e.entity, e.new_shield_value, e.originator, e.dont_trigger_events); 
+                            break;
+                        case ServerUnitHeal e:
+                            if (e.entity != null) Patch_EntityController_Heal.Original(e.entity, e.new_health_value, e.originator, e.dont_trigger_has_healed, e.dont_trigger_being_healed); 
+                            break;
+                        case ServerUnitChargeShield e:
+                            if (e.entity != null) Patch_EntityController_ChargeShield.Original(e.entity, e.new_shield_value, true); 
+                            break;
+                        case ServerUnitTakeDamage e:
+                            if (e.entity != null) Patch_EntityController_TakeDamage.Original(e.entity, e.new_health_value, e.originator, e.dont_trigger_has_damaged, e.ignore_armor); 
+                            break;
+                        case ServerUnitProduce e:
+                            if (e.entity != null) Patch_EntityController_Produce.Original(e.entity, e.instant_production, e.for_free, e.dont_trigger_events); 
+                            break;
+                        case ServerUnitAbortProduction e:
+                            if (e.entity != null) Patch_EntityController_AbortProduction.Original(e.entity); 
+                            break;
+                        case ServerUnitChargeMana e:
+                            if (e.entity != null) Patch_EntityController_ChargeMana.Original(e.entity, e.new_mana_value, e.display_delta); 
                             break;
                     }
             } catch (Exception ex){
