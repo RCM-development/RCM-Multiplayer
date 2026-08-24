@@ -114,10 +114,17 @@ namespace RCM_Coop{
         }
 
         public static bool IsServerUp() => (game_server != null & session != null);
+        public static bool IsClientUp() => (game_client != null & session != null);
         public static void SendServerInGamePacket(SerializablePacket packet){
             if (IsServerUp())
             {
                 game_server.SendPacketToInGame(packet);
+            }
+        }
+        public static void SendClientInGamePacket(SerializablePacket packet){
+            if (IsClientUp())
+            {
+                game_client.SendPacketToInGame(packet);
             }
         }
 
@@ -404,25 +411,44 @@ namespace RCM_Coop{
         #region PAUSE GAME PATCHES
         [HarmonyPatch(typeof(Navigator), "SlowDown")] public static class Patch_Navigator_SlowDown{
             [HarmonyPrefix] public static bool Prefix(bool withMessage){
-                if (is_client) return false; SendServerInGamePacket(new ServerTimeSlow()); return true;
+                if (is_client){
+                    SendClientInGamePacket(new ClientTimeSlow());
+                    return false;
+                }
+                SendServerInGamePacket(new ServerTimeSlow()); return true;
             }
             [HarmonyReversePatch] public static void Original(bool withMessage) { throw new ree("err"); }
         }
         [HarmonyPatch(typeof(Navigator), "ResetToDefaultSpeed")] public static class Patch_Navigator_ResetToDefaultSpeed{
             [HarmonyPrefix] public static bool Prefix(){
-                if (is_client) return false; SendServerInGamePacket(new ServerTimeNormal()); return true;
+                if (is_client){
+                    SendClientInGamePacket(new ClientTimeNormal());
+                    return false;
+                }
+                SendServerInGamePacket(new ServerTimeNormal()); 
+                return true;
             }
             [HarmonyReversePatch] public static void Original() { throw new ree("err"); }
         }
         [HarmonyPatch(typeof(Navigator), "Pause")] public static class Patch_Navigator_Pause{
             [HarmonyPrefix] public static bool Prefix(){
-                if (is_client) return false; SendServerInGamePacket(new ServerTimePaused()); return true;
+                if (is_client){
+                    SendClientInGamePacket(new ClientTimePaused());
+                    return false;
+                }
+                SendServerInGamePacket(new ServerTimePaused()); 
+                return true;
             }
             [HarmonyReversePatch] public static void Original() { throw new ree("err"); }
         }
         [HarmonyPatch(typeof(Navigator), "Unpause")] public static class Patch_Navigator_Unpause{
             [HarmonyPrefix] public static bool Prefix(){
-                if (is_client) return false; SendServerInGamePacket(new ServerTimeUnpaused()); return true;
+                if (is_client){
+                    SendClientInGamePacket(new ClientTimeUnpaused());
+                    return false;
+                }
+                SendServerInGamePacket(new ServerTimeUnpaused()); 
+                return true;
             }
             [HarmonyReversePatch] public static void Original() { throw new ree("err"); }
         }

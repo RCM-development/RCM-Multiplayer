@@ -114,10 +114,38 @@ namespace RCM_Coop
                             break;
                         case ClientMapLoaded e:
                             if (IsAuthenticated(client)){
-                                RCMManager.Log($"[Co-op] client said green to go, sending all entity data: {packet.GetType().Name}");
+                                RCMManager.Log($"[Co-op] client said green to go, sending all entity data");
                                 session.SendTCP(new ServerFullEntityData(EntitiesManager.CompileEntities()), client);
                                 // update player status to now be in game
                                 UpdateClientStatus(client);
+                            }
+                            break;
+                        case ClientTimeSlow e:
+                            if (IsAuthenticated(client)){
+                                RCMManager.Log($"[Co-op] client said slow time");
+                                if (!Navigator.IsSlowedDown)
+                                    Navigator.SlowDown();
+                            }
+                            break;
+                        case ClientTimeNormal e:
+                            if (IsAuthenticated(client)){
+                                RCMManager.Log($"[Co-op] client said normal time");
+                                if (Navigator.IsSlowedDown)
+                                    Navigator.ResetToDefaultSpeed();
+                            }
+                            break;
+                        case ClientTimePaused e:
+                            if (IsAuthenticated(client)){
+                                RCMManager.Log($"[Co-op] client said pause time");
+                                if (!Navigator._isPaused)
+                                    Navigator.Pause();
+                            }
+                            break;
+                        case ClientTimeUnpaused e:
+                            if (IsAuthenticated(client)){
+                                RCMManager.Log($"[Co-op] client said unpause time");
+                                if (Navigator._isPaused)
+                                    Navigator.Unpause();
                             }
                             break;
                         default:

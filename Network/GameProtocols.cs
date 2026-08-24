@@ -51,9 +51,13 @@ namespace RCM_Coop.Network{
             // then we have other gameplay protocols
             //ServerBuildingSpawning,
             ServerTimeSlow,
+            ClientTimeSlow,
             ServerTimeNormal,
+            ClientTimeNormal,
             ServerTimePaused,
+            ClientTimePaused,
             ServerTimeUnpaused,
+            ClientTimeUnpaused,
             //
             ClientMapLoaded, // {nil}
             ServerEntitiesPositionUpdate, // {}
@@ -97,9 +101,13 @@ namespace RCM_Coop.Network{
                     case proto.ServerUnitRemoveStatusEffect:    yield return new ServerUnitRemoveStatusEffect(packet); break;
                     case proto.ServerUnitRankUp:                yield return new ServerUnitRankUp(packet); break;
                     case proto.ServerTimeSlow:                  yield return new ServerTimeSlow(packet); break;
+                    case proto.ClientTimeSlow:                  yield return new ClientTimeSlow(packet); break;
                     case proto.ServerTimeNormal:                yield return new ServerTimeNormal(packet); break;
+                    case proto.ClientTimeNormal:                yield return new ClientTimeNormal(packet); break;
                     case proto.ServerTimePaused:                yield return new ServerTimePaused(packet); break;
+                    case proto.ClientTimePaused:                yield return new ClientTimePaused(packet); break;
                     case proto.ServerTimeUnpaused:              yield return new ServerTimeUnpaused(packet); break;
+                    case proto.ClientTimeUnpaused:              yield return new ClientTimeUnpaused(packet); break;
                     default: yield break;
             }}
         }
@@ -893,6 +901,15 @@ namespace RCM_Coop.Network{
             }
             public ServerTimeSlow(PacketReader packet){}
         }
+        public class ClientTimeSlow : SerializablePacket{ 
+            public ClientTimeSlow(){}
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ClientTimeSlow);
+                return packet.GetData();
+            }
+            public ClientTimeSlow(PacketReader packet){}
+        }
         public class ServerTimeNormal : SerializablePacket{ 
             public ServerTimeNormal(){}
             public override byte[] Serialize(){
@@ -901,6 +918,15 @@ namespace RCM_Coop.Network{
                 return packet.GetData();
             }
             public ServerTimeNormal(PacketReader packet){}
+        }
+        public class ClientTimeNormal : SerializablePacket{ 
+            public ClientTimeNormal(){}
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ClientTimeNormal);
+                return packet.GetData();
+            }
+            public ClientTimeNormal(PacketReader packet){}
         }
         public class ServerTimePaused : SerializablePacket{ 
             public ServerTimePaused(){}
@@ -911,6 +937,15 @@ namespace RCM_Coop.Network{
             }
             public ServerTimePaused(PacketReader packet){}
         }
+        public class ClientTimePaused : SerializablePacket{ 
+            public ClientTimePaused(){}
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ClientTimePaused);
+                return packet.GetData();
+            }
+            public ClientTimePaused(PacketReader packet){}
+        }
         public class ServerTimeUnpaused : SerializablePacket{ 
             public ServerTimeUnpaused(){}
             public override byte[] Serialize(){
@@ -919,6 +954,15 @@ namespace RCM_Coop.Network{
                 return packet.GetData();
             }
             public ServerTimeUnpaused(PacketReader packet){}
+        }
+        public class ClientTimeUnpaused : SerializablePacket{ 
+            public ClientTimeUnpaused(){}
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ClientTimeUnpaused);
+                return packet.GetData();
+            }
+            public ClientTimeUnpaused(PacketReader packet){}
         }
 
 

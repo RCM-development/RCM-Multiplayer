@@ -181,6 +181,8 @@ namespace RCM_Coop.Network{
             RCMManager.Log("sending map loaded request");
             session.SendTCP(new ClientMapLoaded());
         }
-
+        public void SendPacketToInGame(SerializablePacket packet){
+            session.SendTCP(packet);
+        }
     }
 }
