@@ -440,8 +440,8 @@ namespace RCM_Coop{
             EntitySpawnedAt(entity, network_id);
         }
         public static void RecievedDestroy(ushort entity_id, ushort originator_id, bool withoutTriggeringDestructionActions){
-            EntityController entity = NetworkedEntities[entity_id];
-            EntityController originator = NetworkedEntities[originator_id];
+            EntityController entity = EntityFromId(entity_id);
+            EntityController originator = EntityFromId(originator_id);
 
             if (entity_id != 0xffff && entity == null)
                 RCMManager.Log($"[Co-op] entity id destroyed:{entity_id} but couldn't find target network id in our list");
