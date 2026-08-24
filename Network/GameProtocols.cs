@@ -43,6 +43,10 @@ namespace RCM_Coop.Network{
             ServerUnitProduce,
             ServerUnitAbortProduction,
             ServerUnitChargeMana,
+            ServerUnitSetStatusEffect,
+            ServerUnitRemoveActiveStatus,
+            ServerUnitRemoveStatusEffect,
+            ServerUnitRankUp,
             // end WIP entity protocols
             // then we have other gameplay protocols
             //ServerBuildingSpawning,
@@ -88,11 +92,15 @@ namespace RCM_Coop.Network{
                     case proto.ServerUnitProduce:               yield return new ServerUnitProduce(packet); break;
                     case proto.ServerUnitAbortProduction:       yield return new ServerUnitAbortProduction(packet); break;
                     case proto.ServerUnitChargeMana:            yield return new ServerUnitChargeMana(packet); break;
+                    case proto.ServerUnitSetStatusEffect:       yield return new ServerUnitSetStatusEffect(packet); break;
+                    case proto.ServerUnitRemoveActiveStatus:    yield return new ServerUnitRemoveActiveStatus(packet); break;
+                    case proto.ServerUnitRemoveStatusEffect:    yield return new ServerUnitRemoveStatusEffect(packet); break;
+                    case proto.ServerUnitRankUp:                yield return new ServerUnitRankUp(packet); break;
                     case proto.ServerTimeSlow:                  yield return new ServerTimeSlow(packet); break;
                     case proto.ServerTimeNormal:                yield return new ServerTimeNormal(packet); break;
                     case proto.ServerTimePaused:                yield return new ServerTimePaused(packet); break;
                     case proto.ServerTimeUnpaused:              yield return new ServerTimeUnpaused(packet); break;
-                    default: RCMManager.Log($"[Co-op] deserialized bad protocol value: {(byte)current_proto}"); yield break;
+                    default: yield break;
             }}
         }
         public abstract class SerializablePacket{ public virtual byte[] Serialize() => [];}
@@ -768,7 +776,6 @@ namespace RCM_Coop.Network{
                 entity = DeserializeEntityController(packet);
             }
         }
-        // NOTE: we'll have to implement a sort of rate limiting for this one because it fires off every  single tick per unit !!!!!
         public class ServerUnitChargeMana : SerializablePacket{ 
             public EntityController entity;
             public float new_mana_value;
@@ -780,7 +787,6 @@ namespace RCM_Coop.Network{
                 PacketWriter packet = new();
                 packet.SerializeByte((byte)proto.ServerUnitChargeMana);
                 SerializeEntityController(packet, entity);
-                SerializeNullableStat(packet, new_mana_value);
                 SerializeSignedStat(packet, new_mana_value);
                 packet.SerializeByte(display_delta ? (byte)1 : (byte)0);
                 return packet.GetData();
@@ -789,6 +795,84 @@ namespace RCM_Coop.Network{
                 entity = DeserializeEntityController(packet);
                 new_mana_value = DeserializeSignedStat(packet);
                 display_delta = packet.DeserializeByte() > 0;
+            }
+        }
+        public class ServerUnitSetStatusEffect : SerializablePacket{ 
+            public EntityController entity;
+            public StatusEffect statusEffect;
+            public SetStatusEffect.DurationType durationType;
+            public float duration; // TODO: we want to serialize this as something smaller than a float please, too excessive
+            public ServerUnitSetStatusEffect(EntityController entity, StatusEffect statusEffect, SetStatusEffect.DurationType durationType, float duration){
+                this.entity = entity; this.statusEffect = statusEffect; this.durationType = durationType; this.duration = duration;
+            }
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ServerUnitSetStatusEffect);
+                SerializeEntityController(packet, entity);
+                packet.SerializeInt((int)statusEffect);
+                packet.SerializeByte((byte)durationType);
+                packet.SerializeFloat(duration);
+                return packet.GetData();
+            }
+            public ServerUnitSetStatusEffect(PacketReader packet){
+                entity = DeserializeEntityController(packet);
+                statusEffect = (StatusEffect)packet.DeserializeInt();
+                durationType = (SetStatusEffect.DurationType)packet.DeserializeByte();
+                duration = packet.DeserializeFloat();
+            }
+        }
+        public class ServerUnitRemoveActiveStatus : SerializablePacket{ 
+            public EntityController entity;
+            public StatusEffect statusEffect;
+            public ServerUnitRemoveActiveStatus(EntityController entity, StatusEffect statusEffect){
+                this.entity = entity; this.statusEffect = statusEffect;
+            }
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ServerUnitRemoveActiveStatus);
+                SerializeEntityController(packet, entity);
+                packet.SerializeInt((int)statusEffect);
+                return packet.GetData();
+            }
+            public ServerUnitRemoveActiveStatus(PacketReader packet){
+                entity = DeserializeEntityController(packet);
+                statusEffect = (StatusEffect)packet.DeserializeInt();
+            }
+        }
+        public class ServerUnitRemoveStatusEffect : SerializablePacket{ 
+            public EntityController entity;
+            public StatusEffect statusEffect;
+            public ServerUnitRemoveStatusEffect(EntityController entity, StatusEffect statusEffect){
+                this.entity = entity; this.statusEffect = statusEffect;
+            }
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ServerUnitRemoveStatusEffect);
+                SerializeEntityController(packet, entity);
+                packet.SerializeInt((int)statusEffect);
+                return packet.GetData();
+            }
+            public ServerUnitRemoveStatusEffect(PacketReader packet){
+                entity = DeserializeEntityController(packet);
+                statusEffect = (StatusEffect)packet.DeserializeInt();
+            }
+        }
+        public class ServerUnitRankUp : SerializablePacket{ 
+            public EntityController entity;
+            public int amount;
+            public ServerUnitRankUp(EntityController entity, int amount){
+                this.entity = entity; this.amount = amount;
+            }
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ServerUnitRankUp);
+                SerializeEntityController(packet, entity);
+                packet.SerializeShort((short)amount);
+                return packet.GetData();
+            }
+            public ServerUnitRankUp(PacketReader packet){
+                entity = DeserializeEntityController(packet);
+                amount = packet.DeserializeShort();
             }
         }
         public class ServerTimeSlow : SerializablePacket{ 

@@ -375,6 +375,30 @@ namespace RCM_Coop{
             }
             [HarmonyReversePatch] public static void Original(EntityController __instance, float amount, bool displayDeltaInBar) { throw new ree("err"); }
         }
+        [HarmonyPatch(typeof(EntityController), "SetActiveStatusEffect")] public static class Patch_EntityController_SetActiveStatusEffect{
+            [HarmonyPrefix] public static bool Prefix(EntityController __instance, StatusEffect statusEffect, SetStatusEffect.DurationType durationType, float duration){
+                if (is_client) return false; SendServerInGamePacket(new ServerUnitSetStatusEffect(__instance, statusEffect, durationType, duration)); return true;
+            }
+            [HarmonyReversePatch] public static void Original(EntityController __instance, StatusEffect statusEffect, SetStatusEffect.DurationType durationType, float duration) { throw new ree("err"); }
+        }
+        [HarmonyPatch(typeof(EntityController), "RemoveStatusEffectFromActiveStatusEffects")] public static class Patch_EntityController_RemoveStatusEffectFromActiveStatusEffects{
+            [HarmonyPrefix] public static bool Prefix(EntityController __instance, StatusEffect statusEffect){
+                if (is_client) return false; SendServerInGamePacket(new ServerUnitRemoveActiveStatus(__instance, statusEffect)); return true;
+            }
+            [HarmonyReversePatch] public static void Original(EntityController __instance, StatusEffect statusEffect) { throw new ree("err"); }
+        }
+        [HarmonyPatch(typeof(EntityController), "RemoveStatusEffect")] public static class Patch_EntityController_RemoveStatusEffect{
+            [HarmonyPrefix] public static bool Prefix(EntityController __instance, StatusEffect statusEffect){
+                if (is_client) return false; SendServerInGamePacket(new ServerUnitRemoveStatusEffect(__instance, statusEffect)); return true;
+            }
+            [HarmonyReversePatch] public static void Original(EntityController __instance, StatusEffect statusEffect) { throw new ree("err"); }
+        }
+        [HarmonyPatch(typeof(EntityController), "RankUp")] public static class Patch_EntityController_RankUp{
+            [HarmonyPrefix] public static bool Prefix(EntityController __instance, int amount){
+                if (is_client) return false; SendServerInGamePacket(new ServerUnitRankUp(__instance, amount)); return true;
+            }
+            [HarmonyReversePatch] public static void Original(EntityController __instance, int amount) { throw new ree("err"); }
+        }
         #endregion
 
         #region PAUSE GAME PATCHES

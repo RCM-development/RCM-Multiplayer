@@ -137,6 +137,18 @@ namespace RCM_Coop.Network{
                         case ServerUnitChargeMana e:
                             if (e.entity != null) Patch_EntityController_ChargeMana.Original(e.entity, e.new_mana_value, e.display_delta); 
                             break;
+                        case ServerUnitSetStatusEffect e:
+                            if (e.entity != null) Patch_EntityController_SetActiveStatusEffect.Original(e.entity, e.statusEffect, e.durationType, e.duration);
+                            break;
+                        case ServerUnitRemoveActiveStatus e:
+                            if (e.entity != null) Patch_EntityController_RemoveStatusEffectFromActiveStatusEffects.Original(e.entity, e.statusEffect);
+                            break;
+                        case ServerUnitRemoveStatusEffect e:
+                            if (e.entity != null) Patch_EntityController_RemoveStatusEffect.Original(e.entity, e.statusEffect);
+                            break;
+                        case ServerUnitRankUp e:
+                            if (e.entity != null) Patch_EntityController_RankUp.Original(e.entity, e.amount);
+                            break;
 
                         case ServerTimeSlow e:
                             Patch_Navigator_SlowDown.Original(true);
