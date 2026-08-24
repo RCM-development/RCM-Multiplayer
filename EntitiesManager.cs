@@ -218,30 +218,30 @@ namespace RCM_Coop{
         }
         public static EntityController DecompileEntity(entity_state state, bool no_skipping){
 
-            RCMManager.Log($"[Co-op] decomp [{state.network_id}] checkpoint 1");
+            //RCMManager.Log($"[Co-op] decomp [{state.network_id}] checkpoint 1");
             // get parent by networked id
             EntityController parent = null;
             if (state.parent_controller_id != 0xffff){
                 parent = NetworkedEntities[state.parent_controller_id];
-                RCMManager.Log($"[Co-op] decomp [{state.network_id}] checkpoint 1a");
+                //RCMManager.Log($"[Co-op] decomp [{state.network_id}] checkpoint 1a");
                 if (parent == null && !no_skipping)
                     return null;
             }
-            RCMManager.Log($"[Co-op] decomp [{state.network_id}] checkpoint 2");
+            //RCMManager.Log($"[Co-op] decomp [{state.network_id}] checkpoint 2");
             // then if this object is attached, we use its parent's networked id and index the child we're attached to
             Transform parent_transform = null;
             if (state.parent_transform_id != 0xffff && state.parent_transform_index != 0xffff){
                 EntityController transform_parent = NetworkedEntities[state.parent_controller_id];
 
-                RCMManager.Log($"[Co-op] decomp [{state.network_id}] checkpoint 2a");
+                //RCMManager.Log($"[Co-op] decomp [{state.network_id}] checkpoint 2a");
                 if (transform_parent == null){
                     // then we'll have to push this entry to be back of the list!!
-                    RCMManager.Log($"[Co-op] decomp [{state.network_id}] checkpoint 2b");
+                    //RCMManager.Log($"[Co-op] decomp [{state.network_id}] checkpoint 2b");
                     if (!no_skipping) return null;
                 } else{
                     // otherwise we found the target and we can iterate through child nodes to get target
                     int child_index = 0;
-                    RCMManager.Log($"[Co-op] decomp [{state.network_id}] checkpoint 2c");
+                    //RCMManager.Log($"[Co-op] decomp [{state.network_id}] checkpoint 2c");
                     Transform Traverse(Transform current){
                         foreach (Transform child in current){
                             if (child_index == state.parent_transform_index)
@@ -255,12 +255,12 @@ namespace RCM_Coop{
                     }
                     parent_transform = Traverse(transform_parent.gameObject.transform);
                     // if we cant find anything then theres nothing we can really do about it, but this shouldn't happen? we'd be more likely to find the wrong child than none at all
-                    RCMManager.Log($"[Co-op] decomp [{state.network_id}] checkpoint 2d");
+                    //RCMManager.Log($"[Co-op] decomp [{state.network_id}] checkpoint 2d");
                     if (parent_transform == null) RCMManager.Log($"[Co-op] could not resolve child node to attach sync'd entity to: '{state.entity_id}', transform parent: '{transform_parent.entityId}'");
             }}
 
             //RCMManager.Log($"[Co-op] decomp [{state.network_id}] checkpoint 4");
-            RCMManager.Log($"[Co-op] decomp [{state.network_id}] checkpoint 3 - START");
+            //RCMManager.Log($"[Co-op] decomp [{state.network_id}] checkpoint 3 - START");
             EntityController result = null;
             try
             {
@@ -279,13 +279,13 @@ namespace RCM_Coop{
                 // Log EntityBalancingStore lookup
                 //RCMManager.Log($"[Co-op] Attempting EntityBalancingStore.PrefabLocation for entityId: '{state.entity_id}'");
                 string prefabLocation = EntityBalancingStore.PrefabLocation(state.entity_id);
-                RCMManager.Log($"[Co-op] prefabLocation result: '{prefabLocation}'");
+                //RCMManager.Log($"[Co-op] prefabLocation result: '{prefabLocation}'");
 
                 // Log Resources.Load attempt
                 if (!string.IsNullOrEmpty(prefabLocation)){
                     //RCMManager.Log($"[Co-op] Attempting Resources.Load: '{prefabLocation}'");
                     UnityEngine.Object resourceObj = Resources.Load(prefabLocation);
-                    RCMManager.Log($"[Co-op] Resources.Load result: {resourceObj}");
+                    //RCMManager.Log($"[Co-op] Resources.Load result: {resourceObj}");
                     if (resourceObj == null){
                         RCMManager.Log($"[Co-op] ERROR: Resources.Load returned null!");
                         return null;
@@ -338,7 +338,7 @@ namespace RCM_Coop{
                 );
                 result.gameObject.transform.localScale = Vector3.one * state.scale;
             }
-            RCMManager.Log($"[Co-op] decomp [{state.network_id}] checkpoint 5");
+            //RCMManager.Log($"[Co-op] decomp [{state.network_id}] checkpoint 5");
             return result;
         }
         public static void DecompileEntities(List<entity_state> entities){

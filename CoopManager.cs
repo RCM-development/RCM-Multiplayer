@@ -367,7 +367,7 @@ namespace RCM_Coop{
             [HarmonyPrefix] public static bool Prefix(EntityController __instance, float amount, bool displayDeltaInBar){
                 if (is_client) return false; 
                 // if increment is small, only send if it ticks over to the next whole number
-                if (amount >= 0.5f || Math.Floor(__instance.CurrentMana) < Math.Floor(__instance.CurrentMana + amount))
+                if (Math.Floor(__instance.CurrentMana) != Math.Floor(__instance.CurrentMana + amount))
                 {
                     SendServerInGamePacket(new ServerUnitChargeMana(__instance, amount, displayDeltaInBar));
                 }

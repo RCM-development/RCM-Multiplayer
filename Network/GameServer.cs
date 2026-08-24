@@ -73,7 +73,7 @@ namespace RCM_Coop
             UnityMainThreadDispatcher.Enqueue(() => { OnConnectionOpened(client); });
         }
         void OnDataReceived(byte[] data, TcpClient client){
-            RCMManager.Log($"[Co-op] Received {data.Length} bytes from {client.Client.RemoteEndPoint}");
+            //RCMManager.Log($"[Co-op] Received {data.Length} bytes from {client.Client.RemoteEndPoint}");
             try{
                 foreach (var packet in DeserializePackets(data))
                     switch (packet){

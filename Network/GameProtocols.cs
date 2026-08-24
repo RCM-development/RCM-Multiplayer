@@ -250,12 +250,16 @@ namespace RCM_Coop.Network{
         }
         static void SerializeSignedStat(PacketWriter packet, float stat){
             int val = (int)(stat * 100f); 
-            if (stat > short.MaxValue) stat = short.MaxValue;
-            else if (stat < short.MinValue) stat = short.MinValue;
-            packet.SerializeShort((short)stat);
+            if (val > short.MaxValue) val = short.MaxValue;
+            else if (val < short.MinValue) val = short.MinValue;
+            packet.SerializeShort((short)val);
+            RCMManager.Log($"[Co-op] serializing signed stat: '{stat}' short: '{val}'");
         }
-        static float DeserializeSignedStat(PacketReader packet){
-            return packet.DeserializeShort() / 100f;
+        static float DeserializeSignedStat(PacketReader packet)
+        {
+            float result = packet.DeserializeShort() / 100f;
+            RCMManager.Log($"[Co-op] deserializing signed stat: '{result}'");
+            return result;
         }
 
 
@@ -787,13 +791,18 @@ namespace RCM_Coop.Network{
                 PacketWriter packet = new();
                 packet.SerializeByte((byte)proto.ServerUnitChargeMana);
                 SerializeEntityController(packet, entity);
-                SerializeSignedStat(packet, new_mana_value);
+                float full_entity_mana = entity.CurrentMana + new_mana_value;
+                SerializeNullableStat(packet, full_entity_mana);
                 packet.SerializeByte(display_delta ? (byte)1 : (byte)0);
                 return packet.GetData();
             }
             public ServerUnitChargeMana(PacketReader packet){
                 entity = DeserializeEntityController(packet);
-                new_mana_value = DeserializeSignedStat(packet);
+                new_mana_value = DeserializeNullableStat(packet);
+                if (entity != null)
+                {
+                    new_mana_value = new_mana_value - entity.CurrentMana;
+                }
                 display_delta = packet.DeserializeByte() > 0;
             }
         }

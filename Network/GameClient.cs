@@ -32,7 +32,7 @@ namespace RCM_Coop.Network{
             UnityMainThreadDispatcher.Enqueue(() => { OnConnectionOpened(client); });
         }
         void OnDataReceived(byte[] data, TcpClient client){
-            RCMManager.Log($"[Co-op] Received {data.Length} bytes from {client.Client.RemoteEndPoint}");
+            //RCMManager.Log($"[Co-op] Received {data.Length} bytes from {client.Client.RemoteEndPoint}");
             try{
                 foreach (var packet in DeserializePackets(data))
                     switch (packet){
@@ -68,15 +68,12 @@ namespace RCM_Coop.Network{
                             EntitiesManager.DecompileEntities(e.entities);
                             break;
                         case ServerUnitSpawned e:
-                            RCMManager.Log($"[Co-op] recieved entity spawn event");
                             EntitiesManager.DecompileEntity(e.entity, true);
                             break;
                         case ServerUnitDestroyed e:
-                            RCMManager.Log($"[Co-op] recieved entity destroyed event");
                             EntitiesManager.RecievedDestroy(e.parent_id, e.originator_id, e.dont_use_destruction_effects);
                             break;
                         case ServerEntitiesPositionUpdate e:
-                            RCMManager.Log($"[Co-op] recieved entity pos update event");
                             EntitiesManager.RecievePositionUpdates(e.positions);
                             break;
 
@@ -135,6 +132,7 @@ namespace RCM_Coop.Network{
                             if (e.entity != null) Patch_EntityController_AbortProduction.Original(e.entity); 
                             break;
                         case ServerUnitChargeMana e:
+                            RCMManager.Log($"[Co-op] recieved charge mana command: {e.entity.entityId} new value: {e.new_mana_value}, display delta: {e.display_delta}");
                             if (e.entity != null) Patch_EntityController_ChargeMana.Original(e.entity, e.new_mana_value, e.display_delta); 
                             break;
                         case ServerUnitSetStatusEffect e:
