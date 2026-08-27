@@ -148,6 +148,24 @@ namespace RCM_Coop
                                     Navigator.Unpause();
                             }
                             break;
+                        case ClientExecuteCommnand e:
+                            if (IsAuthenticated(client)){
+                                RCMManager.Log($"[Co-op] client sent command");
+                                if (e.entity != null) e.entity.ExecuteCommand(e.command, e.processingType);
+                            }
+                            break;
+                        case ClientUnitProduce e:
+                            if (IsAuthenticated(client)){
+                                RCMManager.Log($"[Co-op] client sent entity production command");
+                                if (e.entity != null) e.entity.Produce();
+                            }
+                            break;
+                        case ClientUnitAbortProduction e:
+                            if (IsAuthenticated(client)){
+                                RCMManager.Log($"[Co-op] client sent entity abort production command");
+                                if (e.entity != null) e.entity.AbortProduction();
+                            }
+                            break;
                         default:
                             RCMManager.Log($"[Co-op] recieved packet of unsupported type: {packet.GetType().Name}");
                             break;

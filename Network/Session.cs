@@ -53,7 +53,7 @@ namespace RCM_Coop{
         public async void SendTCP(SerializablePacket packet, TcpClient target) => await SendTCP(packet.Serialize(), target);
         protected virtual async void SendTCP(byte[] data) { }
         protected async Task SendTCP(byte[] data, TcpClient target){
-            RCMManager.Log($"[Co-op] sending packet of size: {data.Length}");
+            //RCMManager.Log($"[Co-op] sending packet of size: {data.Length}");
             if (data.Length > MAX_PACKET_SIZE){
                 RCMManager.Log("Data too large for TCP packet, cant send.");
                 return;

@@ -7,6 +7,7 @@ using RCM_Coop.Network.Helpers;
 using TestMod;
 using UnityEngine;
 using UnityEngine.UIElements;
+using static EntityCommand;
 using static RCM_Coop.EntitiesManager;
 using static RCM_Coop.EntitiesManager.entity_state;
 namespace RCM_Coop.Network{
@@ -58,6 +59,10 @@ namespace RCM_Coop.Network{
             ClientTimePaused,
             ServerTimeUnpaused,
             ClientTimeUnpaused,
+
+            ClientExecuteCommnand,
+            ClientUnitProduce,
+            ClientUnitAbortProduction,
             //
             ClientMapLoaded, // {nil}
             ServerEntitiesPositionUpdate, // {}
@@ -108,6 +113,9 @@ namespace RCM_Coop.Network{
                     case proto.ClientTimePaused:                yield return new ClientTimePaused(packet); break;
                     case proto.ServerTimeUnpaused:              yield return new ServerTimeUnpaused(packet); break;
                     case proto.ClientTimeUnpaused:              yield return new ClientTimeUnpaused(packet); break;
+                    case proto.ClientExecuteCommnand:           yield return new ClientExecuteCommnand(packet); break;
+                    case proto.ClientUnitProduce:               yield return new ClientUnitProduce(packet); break;
+                    case proto.ClientUnitAbortProduction:       yield return new ClientUnitAbortProduction(packet); break;
                     default: yield break;
             }}
         }
@@ -270,6 +278,25 @@ namespace RCM_Coop.Network{
             return result;
         }
 
+        static void SerializeVec2Int(PacketWriter packet, Vector2Int? position){
+            if (position == null)
+            {
+                packet.SerializeShort(short.MinValue);
+                packet.SerializeShort(short.MinValue);
+            }
+            else
+            {
+                packet.SerializeShort((short)position.Value.x);
+                packet.SerializeShort((short)position.Value.x);
+            }
+        }
+        static Vector2Int? DeserializeVec2Int(PacketReader packet){
+            short vec_x = packet.DeserializeShort();
+            short vec_y = packet.DeserializeShort();
+            if (vec_x == short.MinValue && vec_y == short.MinValue)
+                return null;
+            return new Vector2Int(vec_x, vec_y);
+        }
 
         static void SerializeEntityState(PacketWriter packet, entity_state entity){
             packet.SerializeString(entity.entity_id);
@@ -628,13 +655,7 @@ namespace RCM_Coop.Network{
                 SerializePosition(packet, pos);
                 packet.SerializeByte(counts_as_move_command ? (byte)1 : (byte)0);
                 packet.SerializeByte(restrictedToHeightLayer == null? (byte)255 : (byte)restrictedToHeightLayer.Value);
-                if (clickPositionCell == null){
-                    packet.SerializeShort(short.MinValue);
-                    packet.SerializeShort(short.MinValue);
-                } else{
-                    packet.SerializeShort((short)clickPositionCell.Value.x);
-                    packet.SerializeShort((short)clickPositionCell.Value.x);
-                }
+                SerializeVec2Int(packet, clickPositionCell);
                 return packet.GetData();
             }
             public ServerUnitMoveTo(PacketReader packet){
@@ -645,12 +666,7 @@ namespace RCM_Coop.Network{
                 if (val == 255)
                      restrictedToHeightLayer = null;
                 else restrictedToHeightLayer = (HeightLayer)val;
-
-                short vec_x = packet.DeserializeShort();
-                short vec_y = packet.DeserializeShort();
-                if (vec_x == short.MinValue && vec_y == short.MinValue)
-                    clickPositionCell = null;
-                else clickPositionCell = new Vector2Int(vec_x, vec_y);
+                clickPositionCell = DeserializeVec2Int(packet);
             }
         }
         public class ServerUnitRepairArmor : SerializablePacket{
@@ -964,7 +980,85 @@ namespace RCM_Coop.Network{
             }
             public ClientTimeUnpaused(PacketReader packet){}
         }
-
+        public class ClientExecuteCommnand : SerializablePacket{
+            public EntityController entity;
+            public EntityCommand command;
+            public EntityController.CommandProcessingType processingType;
+            public ClientExecuteCommnand(EntityController entity, EntityCommand command, EntityController.CommandProcessingType processingType){
+                this.entity = entity; this.command = command; this.processingType = processingType;
+            }
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ClientExecuteCommnand);
+                SerializeEntityController(packet, entity);
+                packet.SerializeByte((byte)command.command);
+                SerializePosition(packet, command.destination);
+                SerializeVec2Int(packet, command.clickPositionCell);
+                SerializeEntityController(packet, command.target);
+                SerializeNullableStat(packet, command.floatValue);
+                //SerializeEntityController(packet, command.skillPlaceholderEntity);
+                ushort val;
+                if (command.numberOfUnactivatedStatusFlagsInGroup == null) val = 0xffff;
+                else val = (ushort)command.numberOfUnactivatedStatusFlagsInGroup;
+                packet.SerializeShort((short)val);
+                packet.SerializeShort((short)command.intValue);
+                packet.SerializeShort((short)command.buildingSize);
+                //packet.SerializeString(command.tag);
+                packet.SerializeByte((byte)command.role);
+                //packet.SerializeString(command.intent);
+                packet.SerializeByte((byte)processingType);
+                return packet.GetData();
+            }
+            public ClientExecuteCommnand(PacketReader packet){
+                entity = DeserializeEntityController(packet);
+                command = new();
+                command.command = (EntityCommand.Command)packet.DeserializeByte();
+                command.destination = DeseralizePosition(packet);
+                command.clickPositionCell = DeserializeVec2Int(packet);
+                command.target = DeserializeEntityController(packet);
+                command.floatValue = DeserializeNullableStat(packet);
+                //command.skillPlaceholderEntity = DeserializeEntityController(packet);
+                ushort val = (ushort)packet.DeserializeShort();
+                if (val == 0xffff) command.numberOfUnactivatedStatusFlagsInGroup = null;
+                else command.numberOfUnactivatedStatusFlagsInGroup = val;
+                command.intValue = packet.DeserializeShort();
+                command.buildingSize = packet.DeserializeShort();
+                //command.tag = packet.DeserializeString();
+                command.role = (EntityCommand.Role)packet.DeserializeByte();
+                //command.intent = packet.DeserializeString();
+                processingType = (EntityController.CommandProcessingType)packet.DeserializeByte();
+            }
+        }
+        public class ClientUnitProduce : SerializablePacket{
+            public EntityController entity;
+            public ClientUnitProduce(EntityController entity){
+                this.entity = entity;
+            }
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ClientUnitProduce);
+                SerializeEntityController(packet, entity);
+                return packet.GetData();
+            }
+            public ClientUnitProduce(PacketReader packet){
+                entity = DeserializeEntityController(packet);
+            }
+        }
+        public class ClientUnitAbortProduction : SerializablePacket{
+            public EntityController entity;
+            public ClientUnitAbortProduction(EntityController entity){
+                this.entity = entity;
+            }
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ClientUnitAbortProduction);
+                SerializeEntityController(packet, entity);
+                return packet.GetData();
+            }
+            public ClientUnitAbortProduction(PacketReader packet){
+                entity = DeserializeEntityController(packet);
+            }
+        }
 
         //private IEnumerator InstantiateBuildingWithEffect(BlueprintInfo info, Vector3 placementPosition, List<Vector2Int> cells)
         //{

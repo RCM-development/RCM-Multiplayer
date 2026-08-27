@@ -366,7 +366,11 @@ namespace RCM_Coop{
         }
         [HarmonyPatch(typeof(EntityController), "AbortProduction")] public static class Patch_EntityController_AbortProduction{
             [HarmonyPrefix] public static bool Prefix(EntityController __instance){
-                if (is_client) return false; SendServerInGamePacket(new ServerUnitAbortProduction(__instance)); return true;
+                if (is_client){
+                    SendClientInGamePacket(new ClientUnitAbortProduction(__instance));
+                    return false;
+                }
+                SendServerInGamePacket(new ServerUnitAbortProduction(__instance)); return true;
             }
             [HarmonyReversePatch] public static void Original(EntityController __instance) { throw new ree("err"); }
         }
@@ -454,5 +458,116 @@ namespace RCM_Coop{
         }
         #endregion
 
+
+        #region CLIENT EXECUTE COMMAND STUBS
+        [HarmonyPatch(typeof(RemoveTagAiAction), "AppendToCommandChain")] public static class Patch_RemoveTagAiAction_AppendToCommandChain {
+            [HarmonyPrefix] public static bool Prefix(EntityController entity, List<EntityController> aiCommandEntities, AiEventPayload payload) => !is_client;
+        }
+        [HarmonyPatch(typeof(MoveAiAction), "MoveToRandomCell")] public static class Patch_MoveAiAction_MoveToRandomCell {
+            [HarmonyPrefix] public static bool Prefix(EntityController entity) => !is_client;
+        }
+        [HarmonyPatch(typeof(MoveAiAction), "MoveToPrecalculatedEntity")] public static class Patch_MoveAiAction_MoveToPrecalculatedEntity {
+            [HarmonyPrefix] public static bool Prefix(EntityController entity) => !is_client;
+        }
+        [HarmonyPatch(typeof(MoveAiAction), "AppendToCommandChain")] public static class Patch_MoveAiAction_AppendToCommandChain {
+            [HarmonyPrefix] public static bool Prefix(EntityController entity, List<EntityController> aiCommandEntities, AiEventPayload payload) => !is_client;
+        }
+        [HarmonyPatch(typeof(GiveUniqueAiGroupIdAiAction), "AppendToCommandChain")] public static class Patch_GiveUniqueAiGroupIdAiAction_AppendToCommandChain {
+            [HarmonyPrefix] public static bool Prefix(EntityController entity, List<EntityController> aiCommandEntities, AiEventPayload payload) => !is_client;
+        }
+        [HarmonyPatch(typeof(GatherAiAction), "AppendToCommandChain")] public static class Patch_GatherAiAction_AppendToCommandChain {
+            [HarmonyPrefix] public static bool Prefix(EntityController entity, List<EntityController> aiCommandEntities, AiEventPayload payload) => !is_client;
+        }
+        [HarmonyPatch(typeof(FollowAiAction), "AppendToCommandChain")] public static class Patch_FollowAiAction_AppendToCommandChain {
+            [HarmonyPrefix] public static bool Prefix(EntityController entity, List<EntityController> aiCommandEntities, AiEventPayload payload) => !is_client;
+        }
+
+        [HarmonyPatch(typeof(EntityController))]
+        [HarmonyPatch("ResumeCommandChainExecution")]
+        [HarmonyPatch(new Type[] { })]
+        public static class Patch_EntityController_ResumeCommandChainExecution {
+            [HarmonyPrefix] public static bool Prefix() => !is_client;
+        }
+        [HarmonyPatch(typeof(EntityController), "ExecuteNextCommand")] public static class Patch_EntityController_ExecuteNextCommand {
+            [HarmonyPrefix] public static bool Prefix() => !is_client;
+        }
+        [HarmonyPatch(typeof(ChangeSpeedAiAction), "AppendToCommandChain")] public static class Patch_ChangeSpeedAiAction_AppendToCommandChain {
+            [HarmonyPrefix] public static bool Prefix(EntityController entity, List<EntityController> aiCommandEntities, AiEventPayload payload) => !is_client;
+        }
+        [HarmonyPatch(typeof(AttackMoveAiAction), "AppendToCommandChain")] public static class Patch_AttackMoveAiAction_AppendToCommandChain {
+            [HarmonyPrefix] public static bool Prefix(EntityController entity, List<EntityController> aiCommandEntities, AiEventPayload payload) => !is_client;
+        }
+        [HarmonyPatch(typeof(AddTagAiAction), "AppendToCommandChain")] public static class Patch_AddTagAiAction_AppendToCommandChain {
+            [HarmonyPrefix] public static bool Prefix(EntityController entity, List<EntityController> aiCommandEntities, AiEventPayload payload) => !is_client;
+        }
+        [HarmonyPatch(typeof(AddMoveCommand), "RunForEveryIdentifiedEntity")] public static class Patch_AddMoveCommand_RunForEveryIdentifiedEntity {
+            [HarmonyPrefix] public static bool Prefix(EntityController entity, EventPayload payload, int index) => !is_client;
+        }
+        [HarmonyPatch(typeof(AddMoveCommand), "RunAtOnceBefore")] public static class Patch_AddMoveCommand_RunAtOnceBefore {
+            [HarmonyPrefix] public static bool Prefix(List<EntityController> entities, EventPayload payload) => !is_client;
+        }
+        [HarmonyPatch(typeof(AddFollowCommand), "RunForEveryIdentifiedEntity")] public static class Patch_AddFollowCommand_RunForEveryIdentifiedEntity {
+            [HarmonyPrefix] public static bool Prefix(EntityController entity, EventPayload payload, int index) => !is_client;
+        }
+        [HarmonyPatch(typeof(AddFleeCommand), "Flee")] public static class Patch_AddFleeCommand_Flee {
+            [HarmonyPrefix] public static bool Prefix(EntityController fleeingEntity, EntityController entityToFleeFrom) => !is_client;
+        }
+        [HarmonyPatch(typeof(AddAttackCommand), "RunForEveryIdentifiedEntity")] public static class Patch_AddAttackCommand_RunForEveryIdentifiedEntity {
+            [HarmonyPrefix] public static bool Prefix(EntityController entity, EventPayload payload, int index) => !is_client;
+        }
+        [HarmonyPatch(typeof(AddActivateSkillCommand), "RunAtOnceBefore")] public static class Patch_AddActivateSkillCommand_RunAtOnceBefore {
+            [HarmonyPrefix] public static bool Prefix(List<EntityController> entities, EventPayload payload) => !is_client;
+        }
+
+
+        [HarmonyPatch(typeof(EntityController), "ExecuteCommand")] public static class Patch_EntityController_ExecuteCommand{
+            [HarmonyPrefix] public static bool Prefix(EntityController __instance, EntityCommand command, EntityController.CommandProcessingType processingType){
+                if (is_client){
+                    SendClientInGamePacket(new ClientExecuteCommnand(__instance, command, processingType));
+                    return false;
+                }
+                return true;
+            }
+        }
+        
+        [HarmonyPatch(typeof(ShowMultipleSkillsWidget), "FactoryButtonClicked")] public static class Patch_ShowMultipleSkillsWidget_FactoryButtonClicked{
+            [HarmonyPrefix] public static bool Prefix(ShowMultipleSkillsWidget __instance, int buttonIndex, bool silent){
+                if (!is_client) return true;
+
+                List<EntityController> list = __instance._entityControllersLists[buttonIndex];
+                if (list.Count < 1) return false;
+                ProductionInfo productionInfo = list[0].ProductionInfo;
+                if (UnitCap.CurrentPlayerCapacityIncludingQueued(productionInfo.entityId) <= 0){
+                    if (!silent)
+                        ShowMessageBox.ShowNotEnoughCapacityMessage_Static();
+                    return false;
+                }
+                if (Bank.ActualBalance("Player") < productionInfo.cost){
+                    if (!silent)
+                        ShowMessageBox.ShowNotEnoughCreditsMessage_Static();
+                    return false;
+                }
+                int num = int.MaxValue;
+                EntityController entityController = null;
+                foreach (EntityController entityController2 in __instance._entityControllersLists[buttonIndex]){
+                    int? inProductionCount = entityController2.InProductionCount;
+                    int? num2 = inProductionCount;
+                    int num3 = num;
+                    if ((num2.GetValueOrDefault() < num3) & (num2 != null)){
+                        num = inProductionCount.Value;
+                        entityController = entityController2;
+                    }
+                }
+                if (entityController != null){
+                    SendClientInGamePacket(new ClientUnitProduce(entityController));
+                    TutorialController.AddUsedInput_Static(HasUsedCertainInputCondition.Input.BuildUnitInFactory);
+                }
+                if (!silent && __instance.audioSource && __instance.clickProduceButtonAudio)
+                    __instance.audioSource.PlayOneShot(__instance.clickProduceButtonAudio);
+
+                return false;
+            }
+        }
+        #endregion
     }
 }
