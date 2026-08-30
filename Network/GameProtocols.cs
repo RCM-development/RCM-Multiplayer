@@ -3,13 +3,14 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using RCM_Coop.Network.Entities;
 using RCM_Coop.Network.Helpers;
 using TestMod;
 using UnityEngine;
 using UnityEngine.UIElements;
 using static EntityCommand;
-using static RCM_Coop.EntitiesManager;
-using static RCM_Coop.EntitiesManager.entity_state;
+using static RCM_Coop.Network.Entities.EntitiesManager;
+using static RCM_Coop.Network.Entities.EntitySerializer;
 namespace RCM_Coop.Network{
     public class GameProtocols{
         enum proto : byte{
@@ -64,6 +65,11 @@ namespace RCM_Coop.Network{
             ClientUnitProduce,
             ClientUnitAbortProduction,
             //
+            ServerPlacementBegin,
+            ServerPlacementShockwave,
+            ServerPlacementReleased,
+            ClientPlacementRequest,
+            //
             ClientMapLoaded, // {nil}
             ServerEntitiesPositionUpdate, // {}
         }
@@ -116,6 +122,10 @@ namespace RCM_Coop.Network{
                     case proto.ClientExecuteCommnand:           yield return new ClientExecuteCommnand(packet); break;
                     case proto.ClientUnitProduce:               yield return new ClientUnitProduce(packet); break;
                     case proto.ClientUnitAbortProduction:       yield return new ClientUnitAbortProduction(packet); break;
+                    case proto.ServerPlacementBegin:            yield return new ServerPlacementBegin(packet); break;
+                    case proto.ServerPlacementShockwave:        yield return new ServerPlacementShockwave(packet); break;
+                    case proto.ServerPlacementReleased:         yield return new ServerPlacementReleased(packet); break;
+                    case proto.ClientPlacementRequest:          yield return new ClientPlacementRequest(packet); break;
                     default: yield break;
             }}
         }
@@ -123,20 +133,23 @@ namespace RCM_Coop.Network{
         public class ClientJoinRequest : SerializablePacket{
             public string username;
             public string password;
-            public ClientJoinRequest(string username, string password){
+            public Color color;
+            public ClientJoinRequest(string username, string password, Color color){
                 this.username = username;
                 this.password = password;
+                this.color = color;
             }
             public override byte[] Serialize(){
                 PacketWriter packet = new();
                 packet.SerializeByte((byte)proto.ClientJoinRequest);
                 packet.SerializeString(username);
-                packet.SerializeString(password);
+                SerializeColor(packet, color);
                 return packet.GetData();
             }
             public ClientJoinRequest(PacketReader packet){
                 username = packet.DeserializeString();
                 password = packet.DeserializeString();
+                color = DeseralizeColor(packet);
             }
         }
         public class ServerJoinResponseOk : SerializablePacket{
@@ -173,20 +186,24 @@ namespace RCM_Coop.Network{
         public class ServerPlayerHasJoined : SerializablePacket{
             public byte player_id;
             public string username;
-            public ServerPlayerHasJoined(byte player_id, string username){
+            public Color color;
+            public ServerPlayerHasJoined(byte player_id, string username, Color color){
                 this.player_id = player_id;
                 this.username = username;
+                this.color = color;
             }
             public override byte[] Serialize(){
                 PacketWriter packet = new();
                 packet.SerializeByte((byte)proto.ServerPlayerHasJoined);
                 packet.SerializeByte(player_id);
                 packet.SerializeString(username);
+                SerializeColor(packet, color);
                 return packet.GetData();
             }
             public ServerPlayerHasJoined(PacketReader packet){
                 player_id = packet.DeserializeByte();
                 username = packet.DeserializeString();
+                color = DeseralizeColor(packet);
             }
         }
         public class ServerPlayerHasLeft : SerializablePacket{
@@ -239,14 +256,28 @@ namespace RCM_Coop.Network{
                 packet.DeserializeShort() / 10.0f
             );
         }
+        static void SerializeColor(PacketWriter packet, Color col){
+            Color32 c = (Color32)col;
+            packet.SerializeByte(c.r);
+            packet.SerializeByte(c.g);
+            packet.SerializeByte(c.b);
+        }
+        static Color DeseralizeColor(PacketReader packet){
+            return new Color32(
+                packet.DeserializeByte(),
+                packet.DeserializeByte(),
+                packet.DeserializeByte(),
+                255
+            );
+        }
         static void SerializeEntityController(PacketWriter packet, EntityController entity){
-            ushort network_id = IdFromEntity(entity);
+            ushort network_id = NetworkedEntities.IdFromEntity(entity);
             if (network_id == 0xffff && entity != null) RCMManager.Log($"Failed to serialize Entity '{entity.entityId}' for networked event...");
             packet.SerializeShort((short)network_id);
         }
         static EntityController DeserializeEntityController(PacketReader packet){
             ushort network_id = (ushort)packet.DeserializeShort();
-            EntityController entity = EntityFromId(network_id);
+            EntityController entity = NetworkedEntities.EntityFromId(network_id).entity;
             if (network_id != 0xffff && entity == null) RCMManager.Log($"Failed to deserialize entity networked id '{network_id}' for networked event...");
             return entity;
         }
@@ -277,8 +308,17 @@ namespace RCM_Coop.Network{
             RCMManager.Log($"[Co-op] deserializing signed stat: '{result}'");
             return result;
         }
-
-        static void SerializeVec2Int(PacketWriter packet, Vector2Int? position){
+        
+        static void SerializeVec2Int(PacketWriter packet, Vector2Int position){
+            packet.SerializeShort((short)position.x);
+            packet.SerializeShort((short)position.y);
+        }
+        static Vector2Int DeserializeVec2Int(PacketReader packet){
+            short vec_x = packet.DeserializeShort();
+            short vec_y = packet.DeserializeShort();
+            return new Vector2Int(vec_x, vec_y);
+        }
+        static void SerializeNullableVec2Int(PacketWriter packet, Vector2Int? position){
             if (position == null)
             {
                 packet.SerializeShort(short.MinValue);
@@ -287,10 +327,10 @@ namespace RCM_Coop.Network{
             else
             {
                 packet.SerializeShort((short)position.Value.x);
-                packet.SerializeShort((short)position.Value.x);
+                packet.SerializeShort((short)position.Value.y);
             }
         }
-        static Vector2Int? DeserializeVec2Int(PacketReader packet){
+        static Vector2Int? DeserializeNullableVec2Int(PacketReader packet){
             short vec_x = packet.DeserializeShort();
             short vec_y = packet.DeserializeShort();
             if (vec_x == short.MinValue && vec_y == short.MinValue)
@@ -300,6 +340,7 @@ namespace RCM_Coop.Network{
 
         static void SerializeEntityState(PacketWriter packet, entity_state entity){
             packet.SerializeString(entity.entity_id);
+            packet.SerializeByte(entity.owning_player);
             packet.SerializeShort((short)entity.network_id);
             packet.SerializeShort((short)entity.parent_controller_id);
             packet.SerializeShort((short)entity.parent_transform_id);
@@ -327,6 +368,7 @@ namespace RCM_Coop.Network{
         }
         static entity_state DeserializeEntityState(PacketReader packet, entity_state entity){
             entity.entity_id = packet.DeserializeString();
+            entity.owning_player = packet.DeserializeByte();
             entity.network_id = (ushort)packet.DeserializeShort();
             entity.parent_controller_id = (ushort)packet.DeserializeShort();
             entity.parent_transform_id = (ushort)packet.DeserializeShort();
@@ -334,7 +376,7 @@ namespace RCM_Coop.Network{
             entity.pos = DeseralizePosition(packet);
             entity.rot_yaw = packet.DeserializeShort() / 182.04166666666f;
             entity.scale = packet.DeserializeShort() / 100.0f;
-            entity.tag = (entity_tags)packet.DeserializeByte();
+            entity.tag = (entity_state.entity_tags)packet.DeserializeByte();
             return entity;
         }
         #endregion
@@ -655,7 +697,7 @@ namespace RCM_Coop.Network{
                 SerializePosition(packet, pos);
                 packet.SerializeByte(counts_as_move_command ? (byte)1 : (byte)0);
                 packet.SerializeByte(restrictedToHeightLayer == null? (byte)255 : (byte)restrictedToHeightLayer.Value);
-                SerializeVec2Int(packet, clickPositionCell);
+                SerializeNullableVec2Int(packet, clickPositionCell);
                 return packet.GetData();
             }
             public ServerUnitMoveTo(PacketReader packet){
@@ -666,7 +708,7 @@ namespace RCM_Coop.Network{
                 if (val == 255)
                      restrictedToHeightLayer = null;
                 else restrictedToHeightLayer = (HeightLayer)val;
-                clickPositionCell = DeserializeVec2Int(packet);
+                clickPositionCell = DeserializeNullableVec2Int(packet);
             }
         }
         public class ServerUnitRepairArmor : SerializablePacket{
@@ -993,7 +1035,7 @@ namespace RCM_Coop.Network{
                 SerializeEntityController(packet, entity);
                 packet.SerializeByte((byte)command.command);
                 SerializePosition(packet, command.destination);
-                SerializeVec2Int(packet, command.clickPositionCell);
+                SerializeNullableVec2Int(packet, command.clickPositionCell);
                 SerializeEntityController(packet, command.target);
                 SerializeNullableStat(packet, command.floatValue);
                 //SerializeEntityController(packet, command.skillPlaceholderEntity);
@@ -1014,7 +1056,7 @@ namespace RCM_Coop.Network{
                 command = new();
                 command.command = (EntityCommand.Command)packet.DeserializeByte();
                 command.destination = DeseralizePosition(packet);
-                command.clickPositionCell = DeserializeVec2Int(packet);
+                command.clickPositionCell = DeserializeNullableVec2Int(packet);
                 command.target = DeserializeEntityController(packet);
                 command.floatValue = DeserializeNullableStat(packet);
                 //command.skillPlaceholderEntity = DeserializeEntityController(packet);
@@ -1060,48 +1102,95 @@ namespace RCM_Coop.Network{
             }
         }
 
-        //private IEnumerator InstantiateBuildingWithEffect(BlueprintInfo info, Vector3 placementPosition, List<Vector2Int> cells)
-        //{
-        //    EntityController engineer = ExistingControllers.Instance.Engineers().First<EntityController>();
-        //    this._dropId++;
-        //    int thisDropId = this._dropId;
-        //    // VisualizeCommandChain.VisualizeCommand(placementPosition);
-        //    foreach (Vector2Int vector2Int in cells)
-        //    {
-        //        this._buildingInProgressCells.Add(vector2Int);
-        //        this._buildingInProgressCellsToOccupiedCells.Add(vector2Int, cells);
-        //    }
-        //    // wait till next update...
-        //    while (thisDropId > this._endAllDropsUntilThisDropId)
-        //    {
-        //        Vector2 placementPosition2d = new Vector2(placementPosition.x, placementPosition.z);
-        //        int currentBuildingSize = ((cells.Count == 1) ? 1 : 2);
-        //        Object.Instantiate<GameObject>((cells.Count == 1) ? this.placementEffect1X1 : this.placementEffect2X2, placementPosition, Quaternion.identity);
-        //        this.DestroyEntitiesOnCells(cells);
-        //        this._grid.MarkCellsAsBuilding(cells);
-        //        yield return new WaitForSeconds(this.buildingDropTime);
-        //        this.DestroyEntitiesOnCells(cells);
-        //        this._entityIdsInProgress.Remove(info.entityId);
-        //        EntityController entityController3 = EntityFactory.InstantiateEntity(info.entityId, placementPosition, null, "Player", info.factoryName, null, UnitRole.None, true, "PlaceBuildings");
-        //        if (entityController3 != null)
-        //        {
-        //            entityController3.crystalAmountThePlayerPaidForIt = EntityBalancingStore.Cost(info.entityId, false);
-        //            Game.ShaderTextures.StartShockwave(placementPosition, (cells.Count == 1) ? this.shockwaveSize1X1 : this.shockwaveSize2X2);
-        //            foreach (Vector2Int vector2Int4 in cells)
-        //            {
-        //                EntityController entityController4 = this._grid.ChestOnCell(vector2Int4);
-        //                if (!(entityController4 == null))
-        //                {
-        //                    entityController4.TriggerEnter(entityController3);
-        //                }
-        //            }
-        //        }
-        //        this.RemoveFromBuildingInProgressCells(cells);
-        //        yield break;
-        //        this.EndThisDrop(info, cells, placementGhostForThisBuilding);
-        //        yield break;
-        //    }
-        //}
+
+
+        public class ServerPlacementBegin : SerializablePacket{
+            public bool is_1x1;
+            public Vector3 position;
+            public ServerPlacementBegin(bool is_1x1, Vector3 position){
+                this.is_1x1 = is_1x1; this.position = position;
+            }
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ServerPlacementBegin);
+                packet.SerializeByte(is_1x1 ? (byte)1 : (byte)0);
+                SerializePosition(packet, position);
+                return packet.GetData();
+            }
+            public ServerPlacementBegin(PacketReader packet){
+                is_1x1 = packet.DeserializeByte() > 0;
+                position = DeseralizePosition(packet);
+            }
+        }
+        public class ServerPlacementShockwave : SerializablePacket{
+            public bool is_1x1;
+            public Vector3 position;
+            public ServerPlacementShockwave(bool is_1x1, Vector3 position){
+                this.is_1x1 = is_1x1; this.position = position;
+            }
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ServerPlacementShockwave);
+                packet.SerializeByte(is_1x1 ? (byte)1 : (byte)0);
+                SerializePosition(packet, position);
+                return packet.GetData();
+            }
+            public ServerPlacementShockwave(PacketReader packet){
+                is_1x1 = packet.DeserializeByte() > 0;
+                position = DeseralizePosition(packet);
+            }
+        }
+        
+        public class ServerPlacementReleased : SerializablePacket{
+            public ushort ghost_id;
+            public ServerPlacementReleased(ushort ghost_id){
+                this.ghost_id = ghost_id;
+            }
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ServerPlacementReleased);
+                packet.SerializeShort((short)ghost_id);
+                return packet.GetData();
+            }
+            public ServerPlacementReleased(PacketReader packet){
+                ghost_id = (ushort)packet.DeserializeShort();
+            }
+        }
+        public class ClientPlacementRequest : SerializablePacket{
+            public EntityController engi;
+            public string entityId;
+            public Vector3 pos;
+            public List<Vector2Int> cells;
+            public ushort ghost_id;
+            public ClientPlacementRequest(EntityController engi, string entityId, Vector3 pos, List<Vector2Int> cells, ushort ghost_id){
+                this.engi = engi; this.entityId = entityId; this.pos = pos; this.cells = cells; this.ghost_id = ghost_id;
+            }
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ClientPlacementRequest);
+                SerializeEntityController(packet, engi);
+                packet.SerializeString(entityId);
+                SerializePosition(packet, pos);
+                packet.SerializeShort((short)ghost_id);
+                packet.SerializeByte((byte)cells.Count);
+                foreach (var v in cells)
+                    SerializeVec2Int(packet, v);
+
+                return packet.GetData();
+            }
+            public ClientPlacementRequest(PacketReader packet){
+                engi = DeserializeEntityController(packet);
+                entityId = packet.DeserializeString();
+                pos = DeseralizePosition(packet);
+                ghost_id = (ushort)packet.DeserializeShort();
+                cells = new List<Vector2Int>();
+                int count = packet.DeserializeByte();
+                for (int i = 0; i < count; i++)
+                    cells.Add(DeserializeVec2Int(packet));
+            }
+        }
+
+
 
     }
 }

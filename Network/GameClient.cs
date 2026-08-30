@@ -5,15 +5,15 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
 using PimDeWitte.UnityMainThreadDispatcher;
+using RCM_Coop.Network.Entities;
 using RCM_Coop.Network.Helpers;
 using TestMod;
+using UnityEngine;
 using static RCM_Coop.CoopManager;
 using static RCM_Coop.Network.GameProtocols;
 namespace RCM_Coop.Network{
 
-    internal class GameClient{
-        Session session;
-        PlayerManager players;
+    internal class GameClient : NetworkedGame{
         public GameClient(Session session){
             this.session = session;
             players = new PlayerManager();
@@ -38,7 +38,7 @@ namespace RCM_Coop.Network{
                     switch (packet){
                         case ServerJoinResponseOk e:
                             RCMManager.Log($"[Co-op] accepted into session, waiting for host...");
-                            players.AddOurselves(e.player_id);
+                            players.AddOurselves(e.player_id, submited_color);
                             // enter awaiting host screen
                             break;
                         case ServerJoinResponseFailed e:
@@ -57,18 +57,18 @@ namespace RCM_Coop.Network{
                             break;
                         case ServerPlayerHasJoined e:
                             RCMManager.Log($"[Co-op] player joined: {e.username}");
-                            players.AddPlayer(e.username, e.player_id);
+                            players.AddPlayer(e.username, e.player_id, e.color);
                             break;
                         case ServerPlayerHasLeft e:
-                            RCMManager.Log($"[Co-op] player left: {players.GetPlayer(e.player_id)?.username}");
+                            RCMManager.Log($"[Co-op] player left: {PlayerManager.GetPlayer(e.player_id)?.username}");
                             players.RemovePlayer(e.player_id);
                             break;
                         case ServerFullEntityData e:
                             RCMManager.Log($"[Co-op] recieved entities list");
-                            EntitiesManager.DecompileEntities(e.entities);
+                            EntitiesManager.RecievedSpawns(e.entities);
                             break;
                         case ServerUnitSpawned e:
-                            EntitiesManager.DecompileEntity(e.entity, true);
+                            EntitiesManager.RecievedSpawn(e.entity);
                             break;
                         case ServerUnitDestroyed e:
                             EntitiesManager.RecievedDestroy(e.parent_id, e.originator_id, e.dont_use_destruction_effects);
@@ -160,6 +160,16 @@ namespace RCM_Coop.Network{
                         case ServerTimeUnpaused e:
                             Patch_Navigator_Unpause.Original();
                             break;
+
+                        case ServerPlacementBegin e:
+                            CoopManager.RecievedPlacementIndicator(e);
+                            break;
+                        case ServerPlacementShockwave e:
+                            CoopManager.RecievedPlacementShockwave(e);
+                            break;
+                        case ServerPlacementReleased e:
+                            CoopManager.RecievedReleasePlacementGhost(e.ghost_id);
+                            break;
                     }
             } catch (Exception ex){
                 RCMManager.Log($"[Co-op] failed to read recieved packets: {ex.Message} callstack: {ex.StackTrace}");
@@ -171,10 +181,11 @@ namespace RCM_Coop.Network{
             // TODO: exit client multiplayer mode??
             // - return to main menu or stay in session if game is running
         }
+        Color submited_color;
         void OnConnectionOpened(TcpClient client){
             RCMManager.Log($"[Co-op] Connection opened with {client.Client.RemoteEndPoint}, sending join packet");
-
-            session.SendTCP(new ClientJoinRequest("username123", "password123"));
+            submited_color = new Color(UnityEngine.Random.value, UnityEngine.Random.value, UnityEngine.Random.value, 1f);
+            session.SendTCP(new ClientJoinRequest("username123", "password123", submited_color));
         }
 
         public void SendMapLoadedRequest(){

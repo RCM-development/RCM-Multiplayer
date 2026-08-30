@@ -40,4 +40,8 @@
     <!-- RCM-Manager checked out as a sibling directory -->
     <ProjectReference Include="..\RCM-Manager\TestMod.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Network\GameSession\" />
+  </ItemGroup>
 </Project>

@@ -5,178 +5,14 @@ using System.Text;
 using System.Threading.Tasks;
 using TestMod;
 using UnityEngine;
-using UnityEngine.UIElements;
 using static RCM_Coop.CoopManager;
-using static RCM_Coop.Network.GameProtocols;
-using static RCM_Coop.Network.GameProtocols.ServerEntitiesPositionUpdate;
-using static RCM_Coop.Network.GameProtocols.ServerFullEntityData;
+namespace RCM_Coop.Network.Entities{
 
-namespace RCM_Coop{
-    public static class EntitiesManager{
-
-        static uint entities_first_free_id = 0;
-        static uint entities_highest_id = 0;
-        static uint entities_assigned_count = 0;
-        const uint MAX_ENTITY_IDS = 4096;
-        static EntityController[] NetworkedEntities = new EntityController[MAX_ENTITY_IDS];
-        static EntityServerInfo[] EntityServerInfos = new EntityServerInfo[MAX_ENTITY_IDS];
-        static Dictionary<EntityController, uint> NetowrkedEntityIDs = new Dictionary<EntityController, uint>();
-        public static IEnumerable<KeyValuePair<uint, EntityController>> IterateNetworkedEntities(){
-            for  (uint i = 0; i < entities_highest_id; i++){
-                EntityController entity = NetworkedEntities[i];
-                if (entity != null)
-                    yield return new KeyValuePair<uint, EntityController>(i, NetworkedEntities[i]);
-        }}
-        public static ushort IdFromEntity(EntityController entity){
-            if (entity == null) return (ushort)0xffff; 
-            if (NetowrkedEntityIDs.TryGetValue(entity, out uint id)){
-                return (ushort)id;
-            }
-            //foreach (var entity_struct in IterateNetworkedEntities())
-            //    if (entity == entity_struct.Value) return (ushort)entity_struct.Key;
-            return (ushort)0xffff;
-        }
-        public static EntityController EntityFromId(int network_id){
-            if (network_id < 0 || network_id >= MAX_ENTITY_IDS) return null;
-            return NetworkedEntities[network_id];
-        }
-
-        #region ENTITY POSITION FORCE SYNC
-        // only needed for host
-        struct EntityServerInfo{
-            public EntityServerInfo(){}
-            public bool position_updated = false;
-        }
-        public static void NotifyEntityMoved(EntityController entity){
-            ushort id = IdFromEntity(entity);
-            if (id != 0xffff){
-                EntityServerInfos[id].position_updated = true;
-            }
-        }
-        private static float accumulator = 0f;
-        private const float interval = 0.1f; // 100 ms
-        public static void Update(){
-            float dt = Time.unscaledDeltaTime;
-            accumulator += dt;
-            if (accumulator >= interval){
-                accumulator -= interval;  
-                // check if we're in game
-                // for now we'll just do entities assigned count
-                if (entities_assigned_count > 0 && CoopManager.IsServerUp()){
-                    List<EntityPosition> positions = new();
-                    foreach (var entity_struct in IterateNetworkedEntities()){
-                        uint id = entity_struct.Key;
-                        EntityController entity = entity_struct.Value;
-                        if (EntityServerInfos[id].position_updated){
-                            EntityServerInfos[id].position_updated = false;
-                            positions.Add(new EntityPosition() { entity = entity, pos = entity.gameObject.transform.position });
-                        }
-                    }
-                    if (positions.Count > 0){
-                        SendServerInGamePacket(new ServerEntitiesPositionUpdate(positions));
-                    }
-                }
-            }
-        }
-        public static void RecievePositionUpdates(List<EntityPosition> positions){
-            foreach (var item in positions){
-                if (item.entity != null){
-                    item.entity.gameObject.transform.position = item.pos;
-                    item.entity.UpdateCachedPosition();
-                }
-                else
-                {
-                    RCMManager.Log($"[Co-op] position sync for entity that doesn't exist.");
-                }
-            }
-        }
-        #endregion
-
-        #region ENTITY CREATION/DELETION
-        public static void EntitySpawned(EntityController entity, bool called_from_above){
-            if (entities_assigned_count >= MAX_ENTITY_IDS){
-                RCMManager.Log("[Co-op] totally networked entities has overflown. cannot network any more entities.");
-                return;
-            }
-            if (string.IsNullOrWhiteSpace(entity.entityId)){
-                RCMManager.Log("[Co-op] tried initiate sync of entity with no entity ID, cant replicate across... for now.");
-                return;
-            }
-
-            // assign a network ID
-            uint assigned_id = entities_first_free_id;
-            EntitySpawnedAt(entity, assigned_id);
-
-            // find our next valid free ID
-            while (true){
-                entities_first_free_id += 1;
-                if (entities_first_free_id > entities_highest_id) 
-                    entities_highest_id = entities_first_free_id;
-
-                if (entities_first_free_id >= MAX_ENTITY_IDS){
-                    RCMManager.Log("[Co-op] networked entities first free has overflown, impending network entities overflow.");
-                    break;
-                }
-                if (NetworkedEntities[entities_first_free_id] == null) break;
-            }
-
-            // replicate creation event to clients
-            if (IsServerUp()){
-                spawned_entity_state state = new();
-                CompileEntity(entity, (ushort)assigned_id, state);
-                state.spawned_from_above = called_from_above;
-                SendServerInGamePacket(new ServerUnitSpawned(state));
-            }
-        }
-        static void EntitySpawnedAt(EntityController entity, uint network_id){
-            if (NetworkedEntities[network_id] != null){
-                RCMManager.Log($"[Co-op] somehow we just overwrote an entity in entities manager... overwrote a {NetworkedEntities[network_id].entityId} with a {entity.entityId} at networkid {network_id}");
-            } else entities_assigned_count += 1;
-
-            NetworkedEntities[network_id] = entity;
-            NetowrkedEntityIDs[entity] = network_id;
-            RCMManager.Log($"[Co-op] new entity: {entity.entityId} id {network_id}");
-        }
-
-        public static void EntityDestroyed(EntityController entity, bool withoutTriggeringDestructionActions, EntityController originator){
-            if (!NetowrkedEntityIDs.ContainsKey(entity)){
-                RCMManager.Log("[Co-op] entity destroyed but wasn't being tracked by entity manager...");
-                return;
-            }
-
-            uint entity_id = NetowrkedEntityIDs[entity];
-            EntityDestroyedAt(entity_id, entity);
-
-            // replicate destruction event to clients
-            if (IsServerUp()){
-                ushort id = IdFromEntity(originator);
-                if (originator != null && id == 0xffff) RCMManager.Log($"[Co-op] entity destroyed: {entity.entityId} id: {entity_id} by: {originator.entityId}, but couldn't match destroyer up to networked id...");
-                SendServerInGamePacket(new ServerUnitDestroyed((ushort)entity_id, id, withoutTriggeringDestructionActions));
-            }
-        }
-        public static void EntityDestroyedAt(uint network_id, EntityController entity = null){
-            if (NetworkedEntities[network_id] == null){
-                RCMManager.Log($"[Co-op] somehow we just tried to destroy an entity that doesn't exist, id: {network_id}");
-                return;
-            }
-
-            if (entity == null) entity = NetworkedEntities[network_id];
-            if (NetowrkedEntityIDs.ContainsKey(entity)) NetowrkedEntityIDs.Remove(entity);
-
-            NetworkedEntities[network_id] = null;
-            entities_assigned_count -= 1;
-
-            // re-evaluate our new free index
-            entities_first_free_id = Math.Min(entities_first_free_id, network_id);
-
-            RCMManager.Log($"[Co-op] entity destroyed: {entity.entityId} id {network_id}");
-        }
-        #endregion
-
-        #region ENTITY SERIALIZATION
+    public class EntitySerializer{
         public class entity_state{
             public string entity_id;
             public ushort network_id;
+            public byte owning_player;
             public ushort parent_controller_id;
             public ushort parent_transform_id;
             public ushort parent_transform_index;
@@ -222,7 +58,7 @@ namespace RCM_Coop{
             // get parent by networked id
             EntityController parent = null;
             if (state.parent_controller_id != 0xffff){
-                parent = NetworkedEntities[state.parent_controller_id];
+                parent = NetworkedEntities.EntityFromId(state.parent_controller_id).entity;
                 //RCMManager.Log($"[Co-op] decomp [{state.network_id}] checkpoint 1a");
                 if (parent == null && !no_skipping)
                     return null;
@@ -231,7 +67,7 @@ namespace RCM_Coop{
             // then if this object is attached, we use its parent's networked id and index the child we're attached to
             Transform parent_transform = null;
             if (state.parent_transform_id != 0xffff && state.parent_transform_index != 0xffff){
-                EntityController transform_parent = NetworkedEntities[state.parent_controller_id];
+                EntityController transform_parent = NetworkedEntities.EntityFromId(state.parent_controller_id).entity;
 
                 //RCMManager.Log($"[Co-op] decomp [{state.network_id}] checkpoint 2a");
                 if (transform_parent == null){
@@ -296,8 +132,8 @@ namespace RCM_Coop{
                 }
 
                 if (state is spawned_entity_state spawned_state3)
-                    result = Patch_InstantiateEntity_Stub.Original(
-                        state.entity_id,
+                    result = Patch_InstantiateEntity_Stub.PrefixedOriginal(
+                        spawned_state3.entity_id,
                         spawned_state3.pos,
                         parent,
                         spawned_state3.TagFromEnum(),
@@ -305,10 +141,10 @@ namespace RCM_Coop{
                         parent_transform,
                         UnitRole.None,
                         spawned_state3.spawned_from_above,
-                        "co-op sync"
+                        $"COOPSYNC NETWORKED_ID='{spawned_state3.network_id}' OWNER_ID='{spawned_state3.owning_player}'"
                     );
                 else
-                    result = Patch_InstantiateEntity_Stub.Original(
+                    result = Patch_InstantiateEntity_Stub.PrefixedOriginal(
                         state.entity_id,
                         state.pos,
                         parent,
@@ -317,7 +153,7 @@ namespace RCM_Coop{
                         parent_transform,
                         UnitRole.None,
                         false,
-                        "co-op sync"
+                        $"COOPSYNC NETWORKED_ID='{state.network_id}' OWNER_ID='{state.owning_player}'"
                     );
 
                 //RCMManager.Log($"[Co-op] decomp [{state.network_id}] checkpoint 4 - InstantiateEntity returned: {result}");
@@ -330,7 +166,6 @@ namespace RCM_Coop{
             }
 
             if (result != null){
-                RecievedSpawn(result, state.network_id);
                 result.gameObject.transform.eulerAngles = new Vector3(
                     result.gameObject.transform.eulerAngles.x,
                     state.rot_yaw,
@@ -360,16 +195,17 @@ namespace RCM_Coop{
                 if (DecompileEntity(entity, false) == null)
                     RCMManager.Log($"[Co-op] couldn't create sync'd entity after 3rd attempt: {entity.entity_id}, id {entity.network_id}");
         }
-        static entity_state CompileEntity(EntityController entity, ushort id, entity_state state) {
+        public static entity_state CompileEntity(EntityController entity, ushort id, byte owning_player, entity_state state) {
             if (string.IsNullOrWhiteSpace(entity.entityId)) {
                 RCMManager.Log($"[Co-op] cant properly serialize entity as it has no entity ID, name: {entity.gameObject.name}");
             }
             state.entity_id = entity.entityId;
             state.network_id = id;
+            state.owning_player = owning_player;
 
             // noting that this can output 0xffff if cant find parent network id
             if (entity.Parent != null)
-                state.parent_controller_id = EntitiesManager.IdFromEntity(entity.Parent);
+                state.parent_controller_id = NetworkedEntities.IdFromEntity(entity.Parent);
             else state.parent_controller_id = (ushort)0xffff;
 
             // for now, check for transform parent, if there is we'll try to identify and then just get the child transform index
@@ -377,7 +213,7 @@ namespace RCM_Coop{
                 EntityController transform_par_entity = entity.gameObject.transform.parent.GetComponentInParent<EntityController>();
                 if (transform_par_entity != null) {
 
-                    ushort transform_parent_id = EntitiesManager.IdFromEntity(transform_par_entity);
+                    ushort transform_parent_id = NetworkedEntities.IdFromEntity(transform_par_entity);
                     if (transform_parent_id != 0xffff) {
 
                         int child_index = 0;
@@ -425,34 +261,12 @@ namespace RCM_Coop{
         }
         public static List<entity_state> CompileEntities(){
             List<entity_state> entities = new();
-            foreach (var entity_struct in EntitiesManager.IterateNetworkedEntities()){
+            foreach (var entity_struct in NetworkedEntities.IterateNetworkedEntities()){
                 uint id = entity_struct.Key;
-                EntityController entity = entity_struct.Value;
-                entities.Add(CompileEntity(entity, (ushort)id, new entity_state()));
+                entities.Add(CompileEntity(entity_struct.Value.entity, (ushort)id, entity_struct.Value.owning_player, new entity_state()));
             }
 
             return entities;
         }
-        #endregion
-
-        public static void RecievedSpawn(EntityController entity, uint network_id)
-        {
-            EntitySpawnedAt(entity, network_id);
-        }
-        public static void RecievedDestroy(ushort entity_id, ushort originator_id, bool withoutTriggeringDestructionActions){
-            EntityController entity = EntityFromId(entity_id);
-            EntityController originator = EntityFromId(originator_id);
-
-            if (entity_id != 0xffff && entity == null)
-                RCMManager.Log($"[Co-op] entity id destroyed:{entity_id} but couldn't find target network id in our list");
-            if (originator_id != 0xffff && originator == null)
-                RCMManager.Log($"[Co-op] entity {entity.entityId} destroyed by originator:{originator_id} but couldn't find target network id in our list");
-
-            Patch_EntityController_Destroy.Original(entity, withoutTriggeringDestructionActions, originator);
-            EntityDestroyed(entity, false, originator);
-        }
-
-
-
     }
 }

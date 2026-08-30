@@ -6,28 +6,26 @@ using System.Text;
 using System.Threading.Tasks;
 using PimDeWitte.UnityMainThreadDispatcher;
 using RCM_Coop.Network;
+using RCM_Coop.Network.Entities;
 using RCM_Coop.Network.Helpers;
 using TestMod;
+using UnityEngine;
 using static LandscapeGenerator;
 using static Profiler;
-using static RCM_Coop.EntitiesManager;
+using static RCM_Coop.Network.Entities.EntitiesManager;
 using static RCM_Coop.Network.GameProtocols;
 using static RCM_Coop.Network.GameProtocols.ServerJoinResponseFailed;
 using static RCM_Coop.Network.PlayerManager;
+namespace RCM_Coop{
 
-namespace RCM_Coop
-{
-    internal class GameServer
-    {
-        Session session;
+    internal class GameServer : NetworkedGame{
         string session_password = "";
-        PlayerManager players;
         byte last_player_id = 1;
         byte NewPlayerID() => last_player_id++;
         public GameServer(Session session){
             this.session = session;
             players = new PlayerManager();
-            players.AddOurselves(0);
+            players.AddOurselves(0, new Color32(0, 255, 0, 255));
             session.data_recieved_callback = RouteOnDataRecieved;
             session.connection_terminated_callback = RouteOnConnectionTerminated;
             session.connection_opened_callback = RouteOnConnectionOpened;
@@ -102,12 +100,12 @@ namespace RCM_Coop
                                     byte allocated_id = NewPlayerID();
                                     session.SendTCP(new ServerJoinResponseOk(allocated_id), client);
                                     foreach (var player in players.GetPlayersList())
-                                        session.SendTCP(new ServerPlayerHasJoined(player.id, player.username), client);
+                                        session.SendTCP(new ServerPlayerHasJoined(player.id, player.username, player.color), client);
                                     // send to everyone
-                                    session.SendTCP(new ServerPlayerHasJoined(allocated_id, e.username));
+                                    session.SendTCP(new ServerPlayerHasJoined(allocated_id, e.username, e.color));
                                     // add to linker & players
                                     clients.Add(new() { client = client, id = allocated_id, is_ingame = false });
-                                    players.AddPlayer(e.username, allocated_id);
+                                    players.AddPlayer(e.username, allocated_id, e.color);
                                 }
                                 unconnected_clients.Remove(client);
                             }
@@ -115,7 +113,7 @@ namespace RCM_Coop
                         case ClientMapLoaded e:
                             if (IsAuthenticated(client)){
                                 RCMManager.Log($"[Co-op] client said green to go, sending all entity data");
-                                session.SendTCP(new ServerFullEntityData(EntitiesManager.CompileEntities()), client);
+                                session.SendTCP(new ServerFullEntityData(EntitySerializer.CompileEntities()), client);
                                 // update player status to now be in game
                                 UpdateClientStatus(client);
                             }
@@ -166,6 +164,12 @@ namespace RCM_Coop
                                 if (e.entity != null) e.entity.AbortProduction();
                             }
                             break;
+                        case ClientPlacementRequest e:
+                            if (IsAuthenticated(client)){
+                                RCMManager.Log($"[Co-op] client sent engi build request");
+                                if (e.engi != null) CoopManager.RecievedPlacementRequest(e);
+                            }
+                            break;
                         default:
                             RCMManager.Log($"[Co-op] recieved packet of unsupported type: {packet.GetType().Name}");
                             break;
@@ -178,7 +182,7 @@ namespace RCM_Coop
 
             byte player_id = GetCLientId(client);
             if (player_id != 255){
-                string username = players.GetPlayer(player_id)?.username;
+                string username = PlayerManager.GetPlayer(player_id)?.username;
                 players.RemovePlayer(player_id);
                 session.SendTCP(new ServerPlayerHasLeft(player_id));
                 RCMManager.Log($"[Co-op] Player disconnected from session: '{username}'");
