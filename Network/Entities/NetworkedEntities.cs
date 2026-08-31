@@ -19,6 +19,7 @@ namespace RCM_Coop.Network.Entities{
             public EntityNetworkData(){}
             public EntityController entity = null; // client + server
             public byte owning_player = 255; // client + server
+            public byte child_entity_index = 255; // server
             public bool position_updated = false; // client + server (client uses to track if has recieved a position yet...)
             public Vector3 last_server_position; // client
         }
@@ -65,7 +66,7 @@ namespace RCM_Coop.Network.Entities{
             Entities[network_id].position_updated = true;
         }
 
-        public static void InsertEntity(EntityController entity, byte owning_player, uint network_id){
+        public static void InsertEntity(EntityController entity, byte owning_player, byte child_index, uint network_id){
             var entry = Entities[network_id];
             if (entry.entity != null){
                 // remove previous entity from lookup system
@@ -77,16 +78,17 @@ namespace RCM_Coop.Network.Entities{
             EntityNetworkData new_entity_data = new();
             new_entity_data.entity = entity;
             new_entity_data.owning_player = owning_player;
+            new_entity_data.child_entity_index = child_index;
             Entities[network_id] = new_entity_data;
             NetworkedEntityIDs[entity] = network_id;
             RCMManager.Log($"[Co-op] new entity: {entity.entityId} id {network_id}");
         }
-        public static bool AllocEntity(EntityController entity, byte owning_player){
+        public static bool AllocEntity(EntityController entity, byte owning_player, byte child_index){
             if (entities_assigned_count >= MAX_ENTITY_IDS){
                 RCMManager.Log("[Co-op] WARNING: totally networked entities has overflown. cannot network any more entities.");
                 return false;
             }
-            InsertEntity(entity, owning_player, entities_first_free_id);
+            InsertEntity(entity, owning_player, child_index, entities_first_free_id);
 
             // find our next valid free ID
             while (true){

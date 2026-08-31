@@ -132,7 +132,6 @@ namespace RCM_Coop.Network{
                             if (e.entity != null) Patch_EntityController_AbortProduction.Original(e.entity); 
                             break;
                         case ServerUnitChargeMana e:
-                            RCMManager.Log($"[Co-op] recieved charge mana command: {e.entity.entityId} new value: {e.new_mana_value}, display delta: {e.display_delta}");
                             if (e.entity != null) Patch_EntityController_ChargeMana.Original(e.entity, e.new_mana_value, e.display_delta); 
                             break;
                         case ServerUnitSetStatusEffect e:

@@ -52,7 +52,6 @@ namespace RCM_Coop {
             UnityMainThreadDispatcher.Update();
             EntitiesManager.Update();
         }
-
         static void UpdateUI() {
             mod.ClearFields();
             if (is_connecting)
@@ -84,7 +83,6 @@ namespace RCM_Coop {
         static bool is_client => session?.is_server == false;
 
         static NetworkedGame networked_game = null;
-
         static async void BeginConnect() {
             is_connecting = true;
             UpdateUI();
@@ -238,37 +236,36 @@ namespace RCM_Coop {
             } }
         #endregion
 
-        
+
         //[HarmonyPatch(typeof(EntityController), "OnHasBeenInstantiated")] public static class Patch_EntityController_OnHasBeenInstantiated {
         //    [HarmonyPrefix] public static bool Prefix(EntityController __instance, bool hasBeenCalledFromAbove) {
         //    }
         //}
 
-        static bool has_run_engis_script = false;
+        static bool has_run_initial_engi = false;
+        static bool block_next_init = false;
         [HarmonyPatch(typeof(EntityController), "Init")] public static class Patch_EntityController_Init {
             [HarmonyPrefix] public static bool Prefix(EntityController __instance, EntityController originEntity) {
+                if (block_next_init) return true;
+
                 // skip entity management if not server, as client recieves all relevant stuff via the sync'd session data
                 if (!is_client) {
-                    // TODO: TEMP SOLUTION I KNOW ITS DOODY
-                    bool is_engi = (EntityBalancingStore.UnitRoles(__instance.entityId) & UnitRole.Engineer) > 0;
-                    if ((is_engi & !has_run_engis_script) || !is_engi) {
-                        //RCMManager.Log("spawning entity, is_engi=" + is_engi);
-                        if (originEntity != null)
-                            __instance.OriginEntity = originEntity; // important that we do this before running init so our other stuff can access this value
-                        EntitiesManager.EntitySpawned(__instance, next_entity_from_above_state);
-                        // spawn in all the other engineers too
-                        //RCMManager.Log("spawned");
-                        if (is_engi) {
-                            has_run_engis_script = true;
-                            foreach (var player in PlayerManager.AllPlayers()) {
-                                if (player.id != PlayerManager.GetHostPlayerID()) {
-                                    EntityController next_engi = EntityFactory.InstantiateEntity(__instance.entityId, __instance.gameObject.transform.position, null, __instance.gameObject.tag, __instance.gameObject.name + " for " + player.username, null, UnitRole.None, false, " co op spawner");
+                    __instance.OriginEntity = originEntity; // important that we do this before running init so our other stuff can access this value
 
-                                    //RCMManager.Log($"spawning extra engi for next player, did_spawn={next_engi != null}, ");
-                                    EntitiesManager.EntitySpawned(next_engi, false, player.id);
-                                    //RCMManager.Log($"spawned extra engi");
-                                    next_engi.canNotBeSelected = true;
-                                }
+                    EntitiesManager.EntitySpawned(__instance, next_entity_from_above_state);
+
+                    // TODO: TEMP SOLUTION I KNOW ITS DOODY
+                    // spawn in all the other engineers too
+                    if (!has_run_initial_engi && (EntityBalancingStore.UnitRoles(__instance.entityId) & UnitRole.Engineer) > 0) {
+                        has_run_initial_engi = true;
+                        foreach (var player in PlayerManager.AllPlayers()) {
+                            if (player.id != PlayerManager.GetHostPlayerID()) {
+                                block_next_init = true;
+                                EntityController next_engi = EntityFactory.InstantiateEntity(__instance.entityId, __instance.gameObject.transform.position, null, __instance.gameObject.tag, __instance.gameObject.name + " for " + player.username, null, UnitRole.None, false, " co op spawner");
+                                block_next_init = false;
+
+                                EntitiesManager.EntitySpawned(next_engi, false, 255, player.id);
+                                next_engi.canNotBeSelected = true;
                             }
                         }
                     }
@@ -290,7 +287,8 @@ namespace RCM_Coop {
                         EntityController exisiting = NetworkedEntities.EntityFromId(networkedId).entity;
                         if (exisiting == null)
                         {
-                            NetworkedEntities.InsertEntity(__instance, (byte)ownerId, networkedId);
+                            RCMManager.Log($"[Co-op] client loading entity: '{input}'");
+                            NetworkedEntities.InsertEntity(__instance, (byte)ownerId, 255, networkedId);
                         }
                         else
                         {
@@ -306,6 +304,28 @@ namespace RCM_Coop {
                 return true;
             }
         }
+        [HarmonyPatch(typeof(EntityController), "InitChildEntityControllers")] public static class Patch_EntityController_InitChildEntityControllers{
+            [HarmonyPrefix] public static bool Prefix(EntityController __instance){
+
+                for (int i = 0; i < __instance.childEntityControllers.Count; i++){
+                    EntityController entityController = __instance.childEntityControllers[i];
+                    entityController.doNotRegisterGlobally = true;
+                    entityController.gameObject.tag = __instance.tag;
+                    block_next_init = true;
+                    entityController.Init(__instance);
+                    block_next_init = false;
+                    entityController.SetUniqueEntityId(EntityFactory.NextUniqueEntityId());
+
+                    RCMManager.Log($"[Co-op] just init a child entity controller index: {i}");
+                    // if server then we need to call specific function broadcast creation
+                    if (IsServerUp()) EntitiesManager.EntitySpawned(__instance, false, (byte)i);
+                }
+
+                return false;
+            }
+        }
+
+
         [HarmonyPatch(typeof(EntityController), "Destroy")] public static class Patch_EntityController_Destroy {
             [HarmonyPrefix] public static bool Prefix(EntityController __instance, bool withoutTriggeringDestructionActions, EntityController originator) {
                 if (is_client) return false; EntitiesManager.EntityDestroyed(__instance, withoutTriggeringDestructionActions, originator); return true;
@@ -643,7 +663,7 @@ namespace RCM_Coop {
         #endregion
 
 
-
+        #region UNIT OWNERSHIP - APPLYING PLAYER MATERIALS
         [HarmonyPatch(typeof(EntityController), "ReplaceMaterial")] public static class Patch_EntityController_ReplaceMaterial {
             [HarmonyPrefix] public static bool Prefix(EntityController __instance, Material newMaterial) {
                 if (!__instance.materialToReplace
@@ -661,8 +681,9 @@ namespace RCM_Coop {
                 return false;
             }
         }
+        #endregion
 
-        #region ENGINEER SELECTION
+        #region UNIT OWNERSHIP - ENGINEER SELECTION
         [HarmonyPatch(typeof(ExistingControllers), "get_Engineer")] public static class Patch_ExistingControllers_Engineer {
             [HarmonyPrefix] public static bool Prefix(ExistingControllers __instance, ref EntityController __result) {
                 if (__instance.Engineers().Count == 0) {
@@ -695,7 +716,7 @@ namespace RCM_Coop {
         }
         #endregion
 
-        #region UNIT SELECTION - OWNERSHIP FILTERS
+        #region UNIT OWNERSHIP - SELECTION FILTERS
         [HarmonyPatch(typeof(EntityController), "Select")] public static class Patch_EntityController_Select {
             [HarmonyPrefix] public static bool Prefix(EntityController __instance) {
                 if (__instance.canNotBeSelected)

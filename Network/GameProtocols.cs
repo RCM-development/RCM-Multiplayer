@@ -341,6 +341,7 @@ namespace RCM_Coop.Network{
         static void SerializeEntityState(PacketWriter packet, entity_state entity){
             packet.SerializeString(entity.entity_id);
             packet.SerializeByte(entity.owning_player);
+            packet.SerializeByte(entity.child_controller_index);
             packet.SerializeShort((short)entity.network_id);
             packet.SerializeShort((short)entity.parent_controller_id);
             packet.SerializeShort((short)entity.parent_transform_id);
@@ -369,6 +370,7 @@ namespace RCM_Coop.Network{
         static entity_state DeserializeEntityState(PacketReader packet, entity_state entity){
             entity.entity_id = packet.DeserializeString();
             entity.owning_player = packet.DeserializeByte();
+            entity.child_controller_index = packet.DeserializeByte();
             entity.network_id = (ushort)packet.DeserializeShort();
             entity.parent_controller_id = (ushort)packet.DeserializeShort();
             entity.parent_transform_id = (ushort)packet.DeserializeShort();

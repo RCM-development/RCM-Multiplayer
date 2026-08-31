@@ -87,44 +87,42 @@ namespace RCM_Coop.Network.Entities{
         }
 
         #region ENTITY CREATION/DELETION
-        public static void EntitySpawned(EntityController entity, bool called_from_above, byte owning_player = 255){
+        public static void EntitySpawned(EntityController entity, bool called_from_above, byte child_index = 255, byte owning_player = 255){
             if (string.IsNullOrWhiteSpace(entity.entityId)){
                 RCMManager.Log("[Co-op] tried initiate sync of entity with no entity ID, cant replicate across... for now.");
                 return;
-            }
-            bool is_engi = (entity.OriginEntity?.Role & UnitRole.Engineer) > 0;
-            if (is_engi)
-            {
-                RCMManager.Log("[Co-op] NOTE: ENGI-CREATED-BUILDING SPAWNED WITH PLAYER ID: " + owning_player);
             }
             // find new owner if we didn't provide one
             if (owning_player == 255){
                 // see if the creator of this entity has an owner
                 PlayerManager.Player owner = GetEntityPlayer(entity.OriginEntity);
                 if (owner != null)
-                     owning_player = owner.id;
-                else owning_player = PlayerManager.GetHostPlayerID();
-            }
-            if (is_engi)
-            {
-                RCMManager.Log("[Co-op] NOTE: ENGI-CREATED-BUILDING NOW HAS PLAYER ID: " + owning_player);
+                {
+                    owning_player = owner.id;
+                    //RCMManager.Log("[Co-op] entity spawned with owner_id: " + owner.id);
+                }
+                else
+                {
+                    owning_player = PlayerManager.GetHostPlayerID();
+                    //RCMManager.Log("[Co-op] entity spawned with no owner, resorting to hostid");
+                }
             }
 
-            if (!NetworkedEntities.AllocEntity(entity, owning_player)) return;
+            if (!NetworkedEntities.AllocEntity(entity, owning_player, child_index)) return;
 
             // replicate creation event to clients
             if (IsServerUp()){
                 spawned_entity_state state = new();
-                EntitySerializer.CompileEntity(entity, NetworkedEntities.IdFromEntity(entity), owning_player, state);
+                EntitySerializer.CompileEntity(entity, NetworkedEntities.IdFromEntity(entity), owning_player, child_index, state);
                 state.spawned_from_above = called_from_above;
                 SendServerInGamePacket(new ServerUnitSpawned(state));
             }
         }
         public static void EntityDestroyed(EntityController entity, bool withoutTriggeringDestructionActions, EntityController originator){
-           ushort entity_id = NetworkedEntities.IdFromEntity(originator);
+            ushort entity_id = NetworkedEntities.IdFromEntity(entity);
+            ushort originator_id = NetworkedEntities.IdFromEntity(originator);
             if (!NetworkedEntities.DeallocEntity(entity)) return;
             if (IsServerUp()){
-                ushort originator_id = NetworkedEntities.IdFromEntity(originator);
                 if (originator != null && originator_id == 0xffff) RCMManager.Log($"[Co-op] entity destroyed: {entity.entityId} id: {entity_id} by: {originator.entityId}, but couldn't match destroyer up to networked id...");
                 SendServerInGamePacket(new ServerUnitDestroyed(entity_id, originator_id, withoutTriggeringDestructionActions));
             }
