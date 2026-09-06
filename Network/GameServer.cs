@@ -24,8 +24,7 @@ namespace RCM_Coop{
         byte NewPlayerID() => last_player_id++;
         public GameServer(Session session){
             this.session = session;
-            players = new PlayerManager();
-            players.AddOurselves(0, new Color32(0, 255, 0, 255));
+            PlayerManager.AddOurselves(0, new Color32(0, 255, 0, 255));
             session.data_recieved_callback = RouteOnDataRecieved;
             session.connection_terminated_callback = RouteOnConnectionTerminated;
             session.connection_opened_callback = RouteOnConnectionOpened;
@@ -88,7 +87,7 @@ namespace RCM_Coop{
                                     CloseAfterDelay(client, 1000);
                                 }
                                 // check username
-                                else if (!players.IsUsernameTaken(e.username) || string.IsNullOrWhiteSpace(e.username)){
+                                else if (!PlayerManager.IsUsernameTaken(e.username) || string.IsNullOrWhiteSpace(e.username)){
                                     RCMManager.Log($"[Co-op] client attempted to connect but username already taken: '{e.username}' client: {client.Client.RemoteEndPoint}");
                                     session.SendTCP(new ServerJoinResponseFailed(JoinError.username_taken), client);
                                     CloseAfterDelay(client, 1000);
@@ -99,13 +98,13 @@ namespace RCM_Coop{
 
                                     byte allocated_id = NewPlayerID();
                                     session.SendTCP(new ServerJoinResponseOk(allocated_id), client);
-                                    foreach (var player in players.GetPlayersList())
+                                    foreach (var player in PlayerManager.GetPlayersList())
                                         session.SendTCP(new ServerPlayerHasJoined(player.id, player.username, player.color), client);
                                     // send to everyone
                                     session.SendTCP(new ServerPlayerHasJoined(allocated_id, e.username, e.color));
                                     // add to linker & players
                                     clients.Add(new() { client = client, id = allocated_id, is_ingame = false });
-                                    players.AddPlayer(e.username, allocated_id, e.color);
+                                    PlayerManager.AddPlayer(e.username, allocated_id, e.color);
                                 }
                                 unconnected_clients.Remove(client);
                             }
@@ -183,7 +182,7 @@ namespace RCM_Coop{
             byte player_id = GetCLientId(client);
             if (player_id != 255){
                 string username = PlayerManager.GetPlayer(player_id)?.username;
-                players.RemovePlayer(player_id);
+                PlayerManager.RemovePlayer(player_id);
                 session.SendTCP(new ServerPlayerHasLeft(player_id));
                 RCMManager.Log($"[Co-op] Player disconnected from session: '{username}'");
             }

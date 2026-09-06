@@ -44,6 +44,7 @@ namespace RCM_Coop.Network{
             ServerUnitTakeDamage,
             ServerUnitProduce,
             ServerUnitAbortProduction,
+            ServerUnitProductionComplete,
             ServerUnitChargeMana,
             ServerUnitSetStatusEffect,
             ServerUnitRemoveActiveStatus,
@@ -69,6 +70,11 @@ namespace RCM_Coop.Network{
             ServerPlacementShockwave,
             ServerPlacementReleased,
             ClientPlacementRequest,
+            //
+            ServerMoneyUpdate,
+            ServerHarvestStateChange,
+            ServerHarvestRun,
+            ServerHarvestHarvested,
             //
             ClientMapLoaded, // {nil}
             ServerEntitiesPositionUpdate, // {}
@@ -106,6 +112,7 @@ namespace RCM_Coop.Network{
                     case proto.ServerUnitTakeDamage:            yield return new ServerUnitTakeDamage(packet); break;
                     case proto.ServerUnitProduce:               yield return new ServerUnitProduce(packet); break;
                     case proto.ServerUnitAbortProduction:       yield return new ServerUnitAbortProduction(packet); break;
+                    case proto.ServerUnitProductionComplete:    yield return new ServerUnitProductionComplete(packet); break;
                     case proto.ServerUnitChargeMana:            yield return new ServerUnitChargeMana(packet); break;
                     case proto.ServerUnitSetStatusEffect:       yield return new ServerUnitSetStatusEffect(packet); break;
                     case proto.ServerUnitRemoveActiveStatus:    yield return new ServerUnitRemoveActiveStatus(packet); break;
@@ -126,6 +133,10 @@ namespace RCM_Coop.Network{
                     case proto.ServerPlacementShockwave:        yield return new ServerPlacementShockwave(packet); break;
                     case proto.ServerPlacementReleased:         yield return new ServerPlacementReleased(packet); break;
                     case proto.ClientPlacementRequest:          yield return new ClientPlacementRequest(packet); break;
+                    case proto.ServerMoneyUpdate:               yield return new ServerMoneyUpdate(packet); break;
+                    case proto.ServerHarvestStateChange:        yield return new ServerHarvestStateChange(packet); break;
+                    case proto.ServerHarvestRun:                yield return new ServerHarvestRun(packet); break;
+                    case proto.ServerHarvestHarvested:          yield return new ServerHarvestHarvested(packet); break;
                     default: yield break;
             }}
         }
@@ -814,8 +825,10 @@ namespace RCM_Coop.Network{
             public bool instant_production;
             public bool for_free;
             public bool dont_trigger_events;
-            public ServerUnitProduce(EntityController entity, bool instant_production, bool for_free, bool dont_trigger_events){
-                this.entity = entity; this.instant_production = instant_production; this.for_free = for_free; this.dont_trigger_events = dont_trigger_events;
+            public short product_count;
+            public short queued_count;
+            public ServerUnitProduce(EntityController entity, bool instant_production, bool for_free, bool dont_trigger_events, short product_count, short queued_count){
+                this.entity = entity; this.instant_production = instant_production; this.for_free = for_free; this.dont_trigger_events = dont_trigger_events; this.product_count = product_count; this.queued_count = queued_count;
             }
             public override byte[] Serialize(){
                 PacketWriter packet = new();
@@ -824,6 +837,8 @@ namespace RCM_Coop.Network{
                 packet.SerializeByte(instant_production ? (byte)1 : (byte)0);
                 packet.SerializeByte(for_free ? (byte)1 : (byte)0);
                 packet.SerializeByte(dont_trigger_events ? (byte)1 : (byte)0);
+                packet.SerializeShort(product_count);
+                packet.SerializeShort(queued_count);
                 return packet.GetData();
             }
             public ServerUnitProduce(PacketReader packet){
@@ -831,21 +846,53 @@ namespace RCM_Coop.Network{
                 instant_production = packet.DeserializeByte() > 0;
                 for_free = packet.DeserializeByte() > 0;
                 dont_trigger_events = packet.DeserializeByte() > 0;
+                product_count = packet.DeserializeShort();
+                queued_count = packet.DeserializeShort();
             }
         }
         public class ServerUnitAbortProduction : SerializablePacket{
             public EntityController entity;
-            public ServerUnitAbortProduction(EntityController entity){
-                this.entity = entity;
+            public short product_count;
+            public short queued_count;
+            public ServerUnitAbortProduction(EntityController entity, short product_count, short queued_count){
+                this.entity = entity; this.product_count = product_count; this.queued_count = queued_count;
             }
             public override byte[] Serialize(){
                 PacketWriter packet = new();
                 packet.SerializeByte((byte)proto.ServerUnitAbortProduction);
                 SerializeEntityController(packet, entity);
+                packet.SerializeShort(product_count);
+                packet.SerializeShort(queued_count);
                 return packet.GetData();
             }
             public ServerUnitAbortProduction(PacketReader packet){
                 entity = DeserializeEntityController(packet);
+                product_count = packet.DeserializeShort();
+                queued_count = packet.DeserializeShort();
+            }
+        }
+        public class ServerUnitProductionComplete : SerializablePacket{
+            public EntityController entity;
+            public EntityController produced_entity;
+            public bool dont_trigger_event;
+            public short queued_count;
+            public ServerUnitProductionComplete(EntityController entity, EntityController produced_entity, bool dont_trigger_event, short queued_count){
+                this.entity = entity; this.produced_entity = produced_entity; this.dont_trigger_event = dont_trigger_event; this.queued_count = queued_count;
+            }
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ServerUnitProductionComplete);
+                SerializeEntityController(packet, entity);
+                SerializeEntityController(packet, produced_entity);
+                packet.SerializeByte(dont_trigger_event ? (byte)1 : (byte)0);
+                packet.SerializeShort(queued_count);
+                return packet.GetData();
+            }
+            public ServerUnitProductionComplete(PacketReader packet){
+                entity = DeserializeEntityController(packet);
+                produced_entity = DeserializeEntityController(packet);
+                dont_trigger_event = packet.DeserializeByte() > 0;
+                queued_count = packet.DeserializeShort();
             }
         }
         public class ServerUnitChargeMana : SerializablePacket{ 
@@ -1191,8 +1238,78 @@ namespace RCM_Coop.Network{
                     cells.Add(DeserializeVec2Int(packet));
             }
         }
-
-
+        public class ServerMoneyUpdate : SerializablePacket{
+            public byte player_id;
+            public float money;
+            public ServerMoneyUpdate(byte player_id, float money){
+                this.player_id = player_id; this.money = money;
+            }
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ServerMoneyUpdate);
+                packet.SerializeByte(player_id);
+                packet.SerializeFloat(money);
+                return packet.GetData();
+            }
+            public ServerMoneyUpdate(PacketReader packet){
+                player_id = packet.DeserializeByte();
+                money = packet.DeserializeFloat();
+            }
+        }
+        public class ServerHarvestStateChange : SerializablePacket{
+            public EntityController entity;
+            public Harvest.State from;
+            public Harvest.State to;
+            public ServerHarvestStateChange(EntityController entity, Harvest.State from, Harvest.State to){
+                this.entity = entity; this.from = from; this.to = to;
+            }
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ServerHarvestStateChange);
+                SerializeEntityController(packet, entity);
+                packet.SerializeByte((byte)from);
+                packet.SerializeByte((byte)to);
+                return packet.GetData();
+            }
+            public ServerHarvestStateChange(PacketReader packet){
+                entity = DeserializeEntityController(packet);
+                from = (Harvest.State)packet.DeserializeByte();
+                to = (Harvest.State)packet.DeserializeByte();
+            }
+        }
+        public class ServerHarvestRun : SerializablePacket{
+            public EntityController entity;
+            public ServerHarvestRun(EntityController entity){
+                this.entity = entity;
+            }
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ServerHarvestRun);
+                SerializeEntityController(packet, entity);
+                return packet.GetData();
+            }
+            public ServerHarvestRun(PacketReader packet){
+                entity = DeserializeEntityController(packet);
+            }
+        }
+        public class ServerHarvestHarvested : SerializablePacket{
+            public EntityController entity;
+            public float harvested_amount;
+            public ServerHarvestHarvested(EntityController entity, float harvested_amount){
+                this.entity = entity; this.harvested_amount = harvested_amount;
+            }
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ServerHarvestHarvested);
+                SerializeEntityController(packet, entity);
+                packet.SerializeShort((short)harvested_amount);
+                return packet.GetData();
+            }
+            public ServerHarvestHarvested(PacketReader packet){
+                entity = DeserializeEntityController(packet);
+                harvested_amount = packet.DeserializeShort();
+            }
+        }
 
     }
 }

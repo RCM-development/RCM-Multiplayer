@@ -32,6 +32,7 @@ namespace RCM_Coop {
     [BepInDependency(RCMManager.IDENTIFIER, BepInDependency.DependencyFlags.HardDependency)]
     [BepInPlugin(IDENTIFIER, "Co-op Plugin", "1.0.0.0")]
     internal class CoopManager : BaseUnityPlugin {
+        #region MOD INTERFACE
         const string IDENTIFIER = "RCM.plugins.coop";
         static RCMModUI mod;
         public static CoopManager coop;
@@ -77,7 +78,9 @@ namespace RCM_Coop {
             }
 
         }
+        #endregion
 
+        #region NETWORKING
         static bool is_connecting = false;
         static Session session = null;
         static bool is_client => session?.is_server == false;
@@ -131,6 +134,7 @@ namespace RCM_Coop {
                 ((GameClient)networked_game).SendPacketToInGame(packet);
             }
         }
+        #endregion
 
         public class ree : Exception {
             public ree() { }
@@ -152,8 +156,8 @@ namespace RCM_Coop {
         }
         #endregion
 
-        static bool next_entity_from_above_state = false; // messed up solution to terrible problem
         #region entity spawning stubs
+        static bool next_entity_from_above_state = false; // messed up solution to terrible problem
         // stub out entity instantiation
         [HarmonyPatch(typeof(EntityFactory), "InstantiateEntity")] public static class Patch_InstantiateEntity_Stub {
             [HarmonyPrefix] public static bool Prefix(string entityId, Vector3 position, EntityController originEntity, string tag, string name, Transform parentTransform, UnitRole additionalRoles, bool hasBeenCalledFromAbove, string instantiationInfo, ref EntityController __result) {
@@ -208,7 +212,6 @@ namespace RCM_Coop {
         public static class Patch_Game_Lose {
             [HarmonyPrefix]
             public static bool Prefix() {
-                RCMManager.Log($"Game.Lose hit:  {new StackTrace(true).ToString()}");
                 if (is_client) {
                     return false;
                 }
@@ -218,7 +221,6 @@ namespace RCM_Coop {
         public static class Patch_FinishLevel_Lose_Static {
             [HarmonyPrefix]
             public static bool Prefix() {
-                RCMManager.Log($"FinishLevel.Lose_Static hit:  {new StackTrace(true).ToString()}");
                 if (is_client) {
                     return false;
                 }
@@ -228,7 +230,6 @@ namespace RCM_Coop {
         public static class Patch_FinishLevel_Win_Static {
             [HarmonyPrefix]
             public static bool Prefix() {
-                RCMManager.Log($"FinishLevel.Win_Static hit:  {new StackTrace(true).ToString()}");
                 if (is_client) {
                     return false;
                 }
@@ -237,10 +238,6 @@ namespace RCM_Coop {
         #endregion
 
 
-        //[HarmonyPatch(typeof(EntityController), "OnHasBeenInstantiated")] public static class Patch_EntityController_OnHasBeenInstantiated {
-        //    [HarmonyPrefix] public static bool Prefix(EntityController __instance, bool hasBeenCalledFromAbove) {
-        //    }
-        //}
 
         static bool has_run_initial_engi = false;
         static bool block_next_init = false;
@@ -287,7 +284,7 @@ namespace RCM_Coop {
                         EntityController exisiting = NetworkedEntities.EntityFromId(networkedId).entity;
                         if (exisiting == null)
                         {
-                            RCMManager.Log($"[Co-op] client loading entity: '{input}'");
+                            //RCMManager.Log($"[Co-op] client loading entity: '{input}'");
                             NetworkedEntities.InsertEntity(__instance, (byte)ownerId, 255, networkedId);
                         }
                         else
@@ -324,8 +321,6 @@ namespace RCM_Coop {
                 return false;
             }
         }
-
-
         [HarmonyPatch(typeof(EntityController), "Destroy")] public static class Patch_EntityController_Destroy {
             [HarmonyPrefix] public static bool Prefix(EntityController __instance, bool withoutTriggeringDestructionActions, EntityController originator) {
                 if (is_client) return false; EntitiesManager.EntityDestroyed(__instance, withoutTriggeringDestructionActions, originator); return true;
@@ -333,6 +328,8 @@ namespace RCM_Coop {
             [HarmonyReversePatch] public static void Original(EntityController __instance, bool withoutTriggeringDestructionActions, EntityController originator) { throw new ree("err"); }
         }
 
+
+        #region ENTITY POSITION SYNC PATCHES
         const float MAX_CLIENT_UNIT_DIST_FROM_SERVER = 5.0f;
         [HarmonyPatch(typeof(EntityController), "UpdateCachedPosition")] public static class Patch_EntityController_UpdateCachedPosition {
             [HarmonyPrefix] public static bool Prefix(EntityController __instance) {
@@ -354,7 +351,7 @@ namespace RCM_Coop {
                 return true;
             }
         }
-
+        #endregion
 
         #region ENTITY STATE PATCHES
         [HarmonyPatch(typeof(EntityController), "ActivateSkill", new Type[] { typeof(Vector3) })] public static class Patch_EntityController_ActivateSkill_Vector3 {
@@ -453,22 +450,6 @@ namespace RCM_Coop {
             }
             [HarmonyReversePatch] public static void Original(EntityController __instance, float amount, EntityController originator, bool doNotFireOnHasDealtDamage, bool ignoreArmor) { throw new ree("err"); }
         }
-        [HarmonyPatch(typeof(EntityController), "Produce")] public static class Patch_EntityController_Produce {
-            [HarmonyPrefix] public static bool Prefix(EntityController __instance, bool instantProduction, bool forFree, bool doNotTriggerHasProducedEvent) {
-                if (is_client) return false; SendServerInGamePacket(new ServerUnitProduce(__instance, instantProduction, forFree, doNotTriggerHasProducedEvent)); return true;
-            }
-            [HarmonyReversePatch] public static void Original(EntityController __instance, bool instantProduction, bool forFree, bool doNotTriggerHasProducedEvent) { throw new ree("err"); }
-        }
-        [HarmonyPatch(typeof(EntityController), "AbortProduction")] public static class Patch_EntityController_AbortProduction {
-            [HarmonyPrefix] public static bool Prefix(EntityController __instance) {
-                if (is_client) {
-                    SendClientInGamePacket(new ClientUnitAbortProduction(__instance));
-                    return false;
-                }
-                SendServerInGamePacket(new ServerUnitAbortProduction(__instance)); return true;
-            }
-            [HarmonyReversePatch] public static void Original(EntityController __instance) { throw new ree("err"); }
-        }
         [HarmonyPatch(typeof(EntityController), "ChargeMana")] public static class Patch_EntityController_ChargeMana {
             [HarmonyPrefix] public static bool Prefix(EntityController __instance, float amount, bool displayDeltaInBar) {
                 if (is_client) return false;
@@ -506,6 +487,279 @@ namespace RCM_Coop {
             [HarmonyReversePatch] public static void Original(EntityController __instance, int amount) { throw new ree("err"); }
         }
         #endregion
+
+        #region FACTORY PRODUCTION PATCHES
+        [HarmonyPatch(typeof(EntityController), "Produce")] public static class Patch_EntityController_Produce {
+            [HarmonyPrefix] public static bool Prefix(EntityController __instance, bool instantProduction, bool forFree, bool doNotTriggerHasProducedEvent) {
+                if (is_client) return false;
+
+                if (__instance.hasActiveSkill && __instance.activeSkillOrProduction == EntityController.ActiveSkillOrProduction.Production){
+                    if ((instantProduction || forFree) && __instance._productionInfo.queuedCount > 0){
+                        __instance._productionInfo.queuedCount--;
+
+                        if (__instance.gameObject.tag == "Player")
+                             PlayerManager.AddMoneyTo(__instance._productionInfo.cost, EntitiesManager.GetEntityPlayerID(__instance));
+                        else Bank.Deposit(__instance.gameObject.tag, (float)__instance._productionInfo.cost);
+
+                        UnitCap.RemoveFromProductCount(__instance._productionInfo.entityId, __instance.IsControlledByAi, 1);
+                    }
+                    int num = forFree ? int.MaxValue : __instance.gameObject.tag == "Player" ? PlayerManager.GetMoney(EntitiesManager.GetEntityPlayerID(__instance)) : Bank.ActualBalance(__instance.gameObject.tag);
+                    if (!__instance.IsProductionPossible(num)) return false;
+
+                    __instance._productionInfo.doNotTriggerHasProducedEvent = doNotTriggerHasProducedEvent;
+                    __instance._productionInfo.queuedCount++;
+                    UnitCap.AddToProductCount(__instance._productionInfo.entityId, __instance.IsControlledByAi);
+                    if (!forFree){
+                        if (__instance.gameObject.tag == "Player")
+                             PlayerManager.AddMoneyTo(-__instance._productionInfo.cost, EntitiesManager.GetEntityPlayerID(__instance));
+                        else Bank.Deposit(__instance.gameObject.tag, -(float)__instance._productionInfo.cost);
+                    }
+
+                    int product_count = (!UnitCap.LivingOrQueuedProductCount.TryGetValue(__instance._productionInfo.entityId, out var value)) ? 0 : (value + 1);
+                    SendServerInGamePacket(new ServerUnitProduce(__instance, instantProduction, forFree, doNotTriggerHasProducedEvent, (short)product_count, (short)__instance._productionInfo.queuedCount));
+                    if (__instance.IsControlledByPlayer && ExistingControllers.Instance.PlayerUnitsWithoutSpawns().Count >= GameBalancingStore.UnitCap)
+                        ShowMessageBox.ShowGlobalCapacityLimitReachedMessage_Static();
+                    if (instantProduction)
+                        __instance._productionInfo.productionStartTime = float.MinValue;
+                    if (__instance._productionInfo.productionHasStarted)
+                        return false;
+                    __instance._productionInfo.productionHasStarted = true;
+                    __instance._productionInfo.productionStartTime = (instantProduction ? float.MinValue : Time.time);
+                    if (__instance.ongoingProductionIndicator && !instantProduction)
+                        __instance.ongoingProductionIndicator.SetActive(true);
+                }
+                return true;
+            }
+            public static void Recieve(ServerUnitProduce e){
+                if (e.entity == null){
+                    RCMManager.Log("[Co-op] Failed to find entity for server-sent entity produce event");
+                    return;
+                }
+
+                e.entity._productionInfo.doNotTriggerHasProducedEvent = e.dont_trigger_events;
+                e.entity._productionInfo.queuedCount = e.queued_count;
+                MatchProductCount(e.entity, e.product_count);
+
+                if (e.entity.IsControlledByPlayer && ExistingControllers.Instance.PlayerUnitsWithoutSpawns().Count >= GameBalancingStore.UnitCap)
+                    ShowMessageBox.ShowGlobalCapacityLimitReachedMessage_Static();
+                if (e.instant_production)
+                    e.entity._productionInfo.productionStartTime = float.MinValue;
+                if (e.entity._productionInfo.productionHasStarted)
+                    return;
+                e.entity._productionInfo.productionHasStarted = true;
+                e.entity._productionInfo.productionStartTime = (e.instant_production ? float.MinValue : Time.time);
+                if (e.entity.ongoingProductionIndicator && !e.instant_production)
+                    e.entity.ongoingProductionIndicator.SetActive(true);
+            }
+        }
+        static void MatchProductCount(EntityController entity, int new_product_count){
+            int product_count = (!UnitCap.LivingOrQueuedProductCount.TryGetValue(entity._productionInfo.entityId, out var value)) ? 0 : (value + 1);
+            if (product_count < new_product_count)
+                for (int i = product_count; i < new_product_count; i++)
+                    UnitCap.AddToProductCount(entity._productionInfo.entityId, entity.IsControlledByAi);
+            else if (product_count > new_product_count)
+                UnitCap.RemoveFromProductCount(entity._productionInfo.entityId, entity.IsControlledByAi, product_count - new_product_count);
+        }
+        [HarmonyPatch(typeof(EntityController), "AbortProduction")] public static class Patch_EntityController_AbortProduction {
+            [HarmonyPrefix] public static bool Prefix(EntityController __instance) {
+                if (is_client) {
+                    SendClientInGamePacket(new ClientUnitAbortProduction(__instance));
+                    return false;
+                }
+
+                if (__instance.hasActiveSkill && __instance.activeSkillOrProduction == EntityController.ActiveSkillOrProduction.Production && __instance._productionInfo.queuedCount > 0){
+                    __instance._productionInfo.queuedCount--;
+                    UnitCap.RemoveFromProductCount(__instance._productionInfo.entityId, __instance.IsControlledByAi, 1);
+                    int product_count = (!UnitCap.LivingOrQueuedProductCount.TryGetValue(__instance._productionInfo.entityId, out var value)) ? 0 : (value + 1);
+                    SendServerInGamePacket(new ServerUnitAbortProduction(__instance, (short)product_count, (short)__instance._productionInfo.queuedCount));
+
+                    if (__instance.gameObject.tag == "Player")
+                         PlayerManager.AddMoneyTo(__instance._productionInfo.cost, EntitiesManager.GetEntityPlayerID(__instance));
+                    else Bank.Deposit(__instance.tag, (float)__instance._productionInfo.cost);
+                    if (__instance._productionInfo.queuedCount == 0){
+                        __instance._productionInfo.productionHasStarted = false;
+                        __instance._productionInfo.productionStartTime = float.MinValue;
+                        if (__instance.ongoingProductionIndicator)
+                            __instance.ongoingProductionIndicator.SetActive(false);
+                    }
+                }
+                return false;
+            }
+            // code that client runs after server says so
+            public static void Recieve(ServerUnitAbortProduction e){
+                if (e.entity == null){
+                    RCMManager.Log("[Co-op] Failed to find entity for server-sent production update");
+                    return;
+                }
+
+                e.entity._productionInfo.queuedCount = e.queued_count;
+                MatchProductCount(e.entity, e.product_count);
+
+                if (e.queued_count == 0){
+                    e.entity._productionInfo.productionHasStarted = false;
+                    e.entity._productionInfo.productionStartTime = float.MinValue;
+                    if (e.entity.ongoingProductionIndicator){
+                        e.entity.ongoingProductionIndicator.SetActive(false);
+                    }
+                }
+            }
+        }
+        [HarmonyPatch(typeof(ShowMultipleSkillsWidget), "FactoryButtonClicked")] public static class Patch_ShowMultipleSkillsWidget_FactoryButtonClicked {
+            [HarmonyPrefix] public static bool Prefix(ShowMultipleSkillsWidget __instance, int buttonIndex, bool silent) {
+                if (!is_client) return true;
+
+                List<EntityController> list = __instance._entityControllersLists[buttonIndex];
+                if (list.Count < 1) return false;
+                ProductionInfo productionInfo = list[0].ProductionInfo;
+                if (UnitCap.CurrentPlayerCapacityIncludingQueued(productionInfo.entityId) <= 0) {
+                    if (!silent)
+                        ShowMessageBox.ShowNotEnoughCapacityMessage_Static();
+                    return false;
+                }
+                if (Bank.ActualBalance("Player") < productionInfo.cost) {
+                    if (!silent)
+                        ShowMessageBox.ShowNotEnoughCreditsMessage_Static();
+                    return false;
+                }
+                int num = int.MaxValue;
+                EntityController entityController = null;
+                foreach (EntityController entityController2 in __instance._entityControllersLists[buttonIndex]) {
+                    int? inProductionCount = entityController2.InProductionCount;
+                    int? num2 = inProductionCount;
+                    int num3 = num;
+                    if ((num2.GetValueOrDefault() < num3) & (num2 != null)) {
+                        num = inProductionCount.Value;
+                        entityController = entityController2;
+                    }
+                }
+                if (entityController != null) {
+                    SendClientInGamePacket(new ClientUnitProduce(entityController));
+                    TutorialController.AddUsedInput_Static(HasUsedCertainInputCondition.Input.BuildUnitInFactory);
+                }
+                if (!silent && __instance.audioSource && __instance.clickProduceButtonAudio)
+                    __instance.audioSource.PlayOneShot(__instance.clickProduceButtonAudio);
+
+                return false;
+            }
+        }
+        [HarmonyPatch(typeof(EntityController), "UpdateProduction")] public static class Patch_EntityController_UpdateProduction {
+            [HarmonyPrefix] public static bool Prefix(EntityController __instance) {
+                if (is_client){
+                    if (!__instance._productionInfo.productionHasStarted && __instance.IsControlledByPlayer)
+                        LevelStatistics.FactoriesNotBuildingTimePlayer += Time.deltaTime;
+                    return false;
+                }
+                
+
+                if (!__instance._productionInfo.productionHasStarted){
+                    if (__instance.IsControlledByPlayer)
+                        LevelStatistics.FactoriesNotBuildingTimePlayer += Time.deltaTime;
+                    return false;
+                }
+                if (Time.time < __instance._productionInfo.productionStartTime + __instance._productionInfo.productionDurationInSeconds)
+                    return false;
+                if (__instance.IsControlledByPlayer && ExistingControllers.Instance.PlayerUnitsWithoutSpawns().Count >= GameBalancingStore.UnitCap)
+                    return false;
+                if (__instance.IsControlledByPlayer && UnitCap.CurrentPlayerCapacityExcludingQueued(__instance._productionInfo.entityId) < 1)
+                    return false;
+
+
+                __instance._productionInfo.queuedCount--;
+                if (__instance._productionInfo.queuedCount > 0)
+                    __instance._productionInfo.productionStartTime = Time.time;
+                else {
+                    __instance._productionInfo.productionHasStarted = false;
+                    if (__instance.ongoingProductionIndicator)
+                        __instance.ongoingProductionIndicator.SetActive(false);
+                }
+                string text = EntityBalancingStore.ProductEntityId(__instance.entityId);
+                if (text == null) throw new Exception(__instance.entityId + " has production component but no entity to produce defined in balancing file");
+
+                UnitRole unitRole = EntityBalancingStore.UnitRoles(text);
+                if (unitRole.HasFlag(UnitRole.Building)){
+                    BlueprintInfo blueprintInfo = new BlueprintInfo(text, "", __instance._factoryName);
+                    EventManager.PublishGlobally<IBlueprintObtainmentListener>(delegate (IBlueprintObtainmentListener x)
+                    {
+                        x.OnObtainedBlueprint(blueprintInfo);
+                    }, __instance.gameObject.tag);
+                    return false;
+                }
+                if (__instance._grid == null)
+                    return false;
+                int num;
+                Vector2Int vector2Int = __instance.CellAroundFactoryClosestToRallyPoint(out num);
+                Vector3 vector = __instance._grid.Grid2World(vector2Int);
+                Vector3 vector2 = __instance._grid.NearestFreeCellCenter(vector, vector, new HeightLayer?(__instance._grid.GetHeightLayer(__instance.OccupiedCells[0])), 7, false, num, false, false, true, null, -1, false, false, false);
+                if ((__instance._grid.IsObstacleOrBuilding(vector2) || __instance._grid.IsMultiLayerCell(vector2)) && ExistingControllers.Instance.Engineer){
+                    Vector2Int vector2Int2 = Pathfinding.NearestReachableDestinationCell(ExistingControllers.Instance.Engineer.CurrentCellOnHeightLayer, new CellOnHeightLayer(vector2Int, __instance._grid.GetHeightLayer(vector2Int)));
+                    vector2 = __instance._grid.Grid2World(vector2Int2);
+                }
+                EntityController entityController = EntityFactory.InstantiateEntity(text, vector2, __instance, __instance.gameObject.tag, __instance._factoryName, null, UnitRole.None, false, "Factory " + __instance.entityId);
+                SendServerInGamePacket(new ServerUnitProductionComplete(__instance, entityController, __instance._productionInfo.doNotTriggerHasProducedEvent, (short)__instance._productionInfo.queuedCount));
+
+                if (entityController == null)
+                    return false;
+                if (__instance.IsControlledByAi){
+                    entityController.aiBaseIndex = __instance.aiBaseIndex;
+                    LevelStatistics.UnitsBuiltAi++;
+                } else{
+                    LevelStatistics.UnitsBuiltPlayer++;
+                    if (entityController.HasRole(UnitRole.Harvester))
+                        LevelStatistics.BuiltPlayerHarvesters++;
+                }
+                if (__instance._grid.IsRamp(vector2)){
+                    EntityFlockingMovement movement = entityController._movement;
+                    if (movement != null)
+                        movement.CorrectHeight();
+                }
+                if (__instance._rallyPoint != null) {
+                    entityController.ExecuteCommand(EntityCommand.Move(__instance._rallyPoint.Value, null, EntityCommand.Role.None), EntityController.CommandProcessingType.ExecuteAndCancelCurrentCommand);
+                }else{
+                    Vector3 vector3 = __instance._grid.SmallPositionVariationWithinSameCell(entityController.Position);
+                    entityController.MoveTo(vector3, true, null);
+                }
+                if (!__instance._productionInfo.doNotTriggerHasProducedEvent){
+                    __instance.RunActions(EntityController.Event.OnHasProducedUnit, new EventPayload{
+                        Self = __instance,
+                        Other = entityController,
+                        Position = entityController.Position
+                    });
+                    return false;
+                }
+                __instance._productionInfo.doNotTriggerHasProducedEvent = false;
+
+                return false;
+            }
+
+            public static void Recieve(ServerUnitProductionComplete e){
+                if (e.entity == null){
+                    RCMManager.Log("[Co-op] Failed to find entity for server-sent production complete event");
+                    return;
+                }
+
+                e.entity._productionInfo.queuedCount = e.queued_count;
+                if (e.entity._productionInfo.queuedCount > 0)
+                    e.entity._productionInfo.productionStartTime = Time.time;
+                else {
+                    e.entity._productionInfo.productionHasStarted = false;
+                    if (e.entity.ongoingProductionIndicator)
+                        e.entity.ongoingProductionIndicator.SetActive(false);
+                }
+
+                if (e.produced_entity == null) return;
+
+                // get this value specifically from the server
+                if (!e.dont_trigger_event){
+                    e.entity.RunActions(EntityController.Event.OnHasProducedUnit, new EventPayload{
+                        Self = e.entity,
+                        Other = e.produced_entity,
+                        Position = e.produced_entity.Position
+                    });
+                }
+            }
+        }
+        #endregion
+
 
         #region PAUSE GAME PATCHES
         [HarmonyPatch(typeof(Navigator), "SlowDown")] public static class Patch_Navigator_SlowDown {
@@ -622,44 +876,6 @@ namespace RCM_Coop {
             }
         }
 
-        [HarmonyPatch(typeof(ShowMultipleSkillsWidget), "FactoryButtonClicked")] public static class Patch_ShowMultipleSkillsWidget_FactoryButtonClicked {
-            [HarmonyPrefix] public static bool Prefix(ShowMultipleSkillsWidget __instance, int buttonIndex, bool silent) {
-                if (!is_client) return true;
-
-                List<EntityController> list = __instance._entityControllersLists[buttonIndex];
-                if (list.Count < 1) return false;
-                ProductionInfo productionInfo = list[0].ProductionInfo;
-                if (UnitCap.CurrentPlayerCapacityIncludingQueued(productionInfo.entityId) <= 0) {
-                    if (!silent)
-                        ShowMessageBox.ShowNotEnoughCapacityMessage_Static();
-                    return false;
-                }
-                if (Bank.ActualBalance("Player") < productionInfo.cost) {
-                    if (!silent)
-                        ShowMessageBox.ShowNotEnoughCreditsMessage_Static();
-                    return false;
-                }
-                int num = int.MaxValue;
-                EntityController entityController = null;
-                foreach (EntityController entityController2 in __instance._entityControllersLists[buttonIndex]) {
-                    int? inProductionCount = entityController2.InProductionCount;
-                    int? num2 = inProductionCount;
-                    int num3 = num;
-                    if ((num2.GetValueOrDefault() < num3) & (num2 != null)) {
-                        num = inProductionCount.Value;
-                        entityController = entityController2;
-                    }
-                }
-                if (entityController != null) {
-                    SendClientInGamePacket(new ClientUnitProduce(entityController));
-                    TutorialController.AddUsedInput_Static(HasUsedCertainInputCondition.Input.BuildUnitInFactory);
-                }
-                if (!silent && __instance.audioSource && __instance.clickProduceButtonAudio)
-                    __instance.audioSource.PlayOneShot(__instance.clickProduceButtonAudio);
-
-                return false;
-            }
-        }
         #endregion
 
 
@@ -805,7 +1021,7 @@ namespace RCM_Coop {
         #endregion
 
 
-
+        #region PLACEMENT & EFFECTS SYNC
         static Dictionary<ushort, GameObject> placement_ghosts = new();
         public static void RecievedReleasePlacementGhost(ushort id){
             if (placement_ghosts.TryGetValue(id, out GameObject g)){
@@ -824,7 +1040,21 @@ namespace RCM_Coop {
         }
 
         private static IEnumerator ClientStubRoutine(){ yield break; }
+        private static void EndThisDrop(PlaceBuildings __instance, BlueprintInfo info, List<Vector2Int> cells, GameObject placementGhostForThisBuilding, byte requesting_player, ushort client_ghost_identifier)
+        {
+            ReleaseNetworkedGhostEntity(client_ghost_identifier);
+            if (placementGhostForThisBuilding)
+            {
+                GameObject.Destroy(placementGhostForThisBuilding);
+            }
+            __instance.RemoveFromBuildingInProgressCells(cells);
+            __instance._entityIdsInProgress.Remove(info.entityId);
+            PlayerManager.AddMoneyTo(EntityBalancingStore.Cost(info.entityId, false), requesting_player);
+        }
         private static IEnumerator CustomInstantiateBuildingWithEffect(PlaceBuildings __instance, EntityController engineer, BlueprintInfo info, Vector3 placementPosition, List<Vector2Int> cells, GameObject placementGhostForThisBuilding, ushort client_ghost_identifier = 0xffff){
+            if (engineer == null) yield break;
+            byte requesting_player = EntitiesManager.GetEntityPlayerID(engineer);
+            PlayerManager.AddMoneyTo(-EntityBalancingStore.Cost(info.entityId, false), requesting_player);
 
             engineer.ExecuteCommand(EntityCommand.PlaceBuilding(placementPosition, __instance._dropId + 1, __instance._buildingSize), PlaceBuildings.CurrentCommandProcessingType);
             __instance._dropId++;
@@ -873,8 +1103,7 @@ namespace RCM_Coop {
                                                 Vector2Int? vector2Int2 = Pathfinding.NearestReachableCellAround(cells, entityController.CurrentCell, __instance._buildingInProgressCells, null, true);
                                                 if (vector2Int2 == null)
                                                 {
-                                                    ReleaseNetworkedGhostEntity(client_ghost_identifier);
-                                                    __instance.EndThisDrop(info, cells, placementGhostForThisBuilding);
+                                                    EndThisDrop(__instance, info, cells, placementGhostForThisBuilding, requesting_player, client_ghost_identifier);
                                                     yield break;
                                                 }
                                                 flag3 = true;
@@ -983,8 +1212,7 @@ namespace RCM_Coop {
                                     }
                                     yield return null;
                                 }
-                                ReleaseNetworkedGhostEntity(client_ghost_identifier);
-                                __instance.EndThisDrop(info, cells, placementGhostForThisBuilding);
+                                EndThisDrop(__instance, info, cells, placementGhostForThisBuilding, requesting_player, client_ghost_identifier);
                                 if (engineer && engineer.CommandChainExecutionIsPaused)
                                 {
                                     engineer.ResumeCommandChainExecution();
@@ -1007,14 +1235,12 @@ namespace RCM_Coop {
                             }
                             if (!engineer || !engineer.IsExecutingPlaceBuildingCommand(thisDropId))
                             {
-                                ReleaseNetworkedGhostEntity(client_ghost_identifier);
-                                __instance.EndThisDrop(info, cells, placementGhostForThisBuilding);
+                                EndThisDrop(__instance, info, cells, placementGhostForThisBuilding, requesting_player, client_ghost_identifier);
                                 yield break;
                             }
                             yield return null;
                         }
-                        ReleaseNetworkedGhostEntity(client_ghost_identifier);
-                        __instance.EndThisDrop(info, cells, placementGhostForThisBuilding);
+                        EndThisDrop(__instance, info, cells, placementGhostForThisBuilding, requesting_player, client_ghost_identifier);
                         yield break;
                     }
                     if (engineer.HasPlaceBuildingCommandInCommandChain(thisDropId))
@@ -1024,14 +1250,12 @@ namespace RCM_Coop {
                 }
                 if (!flag)
                 {
-                    ReleaseNetworkedGhostEntity(client_ghost_identifier);
-                    __instance.EndThisDrop(info, cells, placementGhostForThisBuilding);
+                    EndThisDrop(__instance, info, cells, placementGhostForThisBuilding, requesting_player, client_ghost_identifier);
                     yield break;
                 }
                 yield return null;
             }
-            ReleaseNetworkedGhostEntity(client_ghost_identifier);
-            __instance.EndThisDrop(info, cells, placementGhostForThisBuilding);
+            EndThisDrop(__instance, info, cells, placementGhostForThisBuilding, requesting_player, client_ghost_identifier);
             yield break;
         }
         private static void ReleaseNetworkedGhostEntity(ushort client_ghost_identifier){
@@ -1058,9 +1282,380 @@ namespace RCM_Coop {
                 return false;
             }
         }
+        #endregion
+
+        #region MONEY SYNC
+        [HarmonyPatch(typeof(Bank), "Deposit")] public static class Patch_Bank_Deposit{
+            [HarmonyPrefix] public static bool Prefix(string accountNumber, float amount){
+                if (is_client) return false;
+                // replicate value to players
+                if (accountNumber == "Player"){
+                    PlayerManager.AddMoney(amount);
+                    return false;
+                }
+                return true;
+            }
+            [HarmonyReversePatch] public static void Original(string accountNumber, float amount) { throw new ree("err"); }
+        }
+        // fully null out function as we're moving the purchase logic elsewhere
+        [HarmonyPatch(typeof(ShowBuildingMenu), "OnBuildingHasBeenPlaced")] public static class Patch_ShowBuildingMenu_OnBuildingHasBeenPlaced{
+            [HarmonyPrefix] public static bool Prefix(BlueprintInfo blueprintInfo){
+                return false;
+            }
+        }
+
+        [HarmonyPatch(typeof(GainCredits), "RunForEveryIdentifiedEntity")] public static class Patch_GainCredits_RunForEveryIdentifiedEntity{
+            [HarmonyPrefix] public static bool Prefix(GainCredits __instance, EntityController entity, EventPayload payload, int index){
+                if (is_client) return false;
+
+                EntityController entityController = payload.EntityOf(__instance.takenFrom, entity);
+                float num = payload.CalculationValue(__instance.creditAmount, entityController);
+                num *= __instance.multiplier;
+
+                if (__instance.multiplyWithRandomCurveValue)
+                    num *= __instance.randomMultiplier.Evaluate(UnityEngine.Random.value);
+
+                if (__instance.multiplyWithFloatValueFromPayload)
+                    num *= payload.FloatValue;
+
+                string text;
+                switch (__instance.creditReceiver){
+                    case GainCredits.CreditReceiver.Player:
+                        text = "Player";
+                        break;
+                    case GainCredits.CreditReceiver.Ai:
+                        text = "AI";
+                        break;
+                    case GainCredits.CreditReceiver.OwnerOfSelf:
+                        text = payload.Self.tag;
+                        break;
+                    case GainCredits.CreditReceiver.OwnerOfParentOfSelf:
+                        if (!payload.Self.Parent)
+                            return false;
+                        text = payload.Self.Parent.tag;
+                        break;
+                    case GainCredits.CreditReceiver.OwnerOfOperatingEntities:
+                        text = entity.tag;
+                        break;
+                    case GainCredits.CreditReceiver.OwnerOfEnemyOfSelf:
+                        text = Tags.EnemyOf(payload.Self.tag);
+                        if (string.IsNullOrEmpty(text))
+                            return false;
+                        break;
+                    default:
+                        throw new ArgumentOutOfRangeException();
+                }
+
+                if (text == "Player"){
+                    byte player_id = entity != null ? EntitiesManager.GetEntityPlayerID(entity) : EntitiesManager.GetEntityPlayerID(payload.Self);
+                    if (player_id != 255)
+                         PlayerManager.AddMoneyTo(num, player_id);
+                    else PlayerManager.AddMoney(num);
+                }
+                else Bank.Deposit(text, num);
+                return false;
+            }
+        }
+
+        #endregion
 
 
+        #region HARVESTER SYNC PATCHES 
+        static Harvest GetEntityHarvest(EntityController entity){
+            // iterate through all events
+            foreach (var v in entity.events)
+                foreach (var h in v.actions)
+                    if (h is Harvest harvest)
+                        return harvest;
+            return null;
+        }
+        public static void RecievedHarvestStateChange(ServerHarvestStateChange e){
+            if (e.entity == null){
+                RCMManager.Log("[Co-op] Failed to find entity for server-sent server harvest state change");
+                return;
+            }
 
+            Harvest harvest = GetEntityHarvest(e.entity);
+            if (harvest == null){
+                RCMManager.Log("[Co-op] Failed to find entity harvest event for server-sent server harvest state change");
+                return;
+            }
+            if (harvest._self == null){
+                RCMManager.Log("[Co-op] Failed to find entity harvest self for server-sent server harvest state change");
+                return;
+            }
+
+            // begin harvesting
+            if (e.from == Harvest.State.MoveToCrystal && e.to == Harvest.State.Harvest){
+                if (harvest.harvestParticleSystem)
+                    harvest.harvestParticleSystem.Play();
+                if (harvest.harvestAudioSource)
+                    harvest.harvestAudioSource.Play();
+            }
+            // finish harvesting
+            if (e.from == Harvest.State.Harvest && (e.to == Harvest.State.MoveToRefinery || e.to == Harvest.State.MoveToCrystal)){
+                if (harvest.harvestParticleSystem)
+                    harvest.harvestParticleSystem.Stop();
+                if (harvest.harvestAudioSource)
+                    harvest.harvestAudioSource.Stop();
+            }
+            // finish offloading crystals
+            if (e.from == Harvest.State.ExchangeLoadWithCredits && e.to == Harvest.State.MoveToCrystal){
+                harvest._loadExchangeHasStarted = false;
+                harvest.UpdateCrystalFillImage((float)harvest._self.GainCreditsAmount, 0f, -harvest._currentLoad);
+                harvest._currentLoad = 0f;
+                // basically a cheat to get nearest refinery to play effects on, since we dont bother syncing that variable over...
+                harvest.MoveToClosestRefinery();
+                if (harvest._currentRefineryToGoTo != null){
+                    harvest._currentRefineryToGoTo.PlayRefineryExchangeLoadParticleSystem();
+                    harvest._currentRefineryToGoTo = null;
+                }
+                if (harvest.exchangeLoadParticleSystem)
+                    harvest.exchangeLoadParticleSystem.Stop();
+            }
+            // stop harvesting
+            if (e.to == Harvest.State.Idle){
+                harvest._self.isHarvesting = false;
+            }
+
+            harvest._currentState = e.to;
+            
+        }
+        public static void RecievedHarvested(ServerHarvestHarvested e){
+            if (e.entity == null){
+                RCMManager.Log("[Co-op] Failed to find entity for server-sent server harvested update");
+                return;
+            }
+
+            Harvest harvest = GetEntityHarvest(e.entity);
+            if (harvest == null){
+                RCMManager.Log("[Co-op] Failed to find entity harvest event for server-sent server harvested update");
+                return;
+            }
+            if (harvest._self == null){
+                RCMManager.Log("[Co-op] Failed to find entity harvest self for server-sent server harvested update");
+                return;
+            }
+
+            int num = (int)harvest._self.GainCreditsAmount; 
+            float delta = e.harvested_amount - harvest._currentLoad;
+            harvest._currentLoad = e.harvested_amount;
+            if (harvest._currentLoad > (float)num)
+                harvest._currentLoad = (float)num;
+            harvest.UpdateCrystalFillImage((float)num, harvest._currentLoad, delta);
+        }
+        public static void RecievedHarvestRun(ServerHarvestRun e){
+            if (e.entity == null){
+                RCMManager.Log("[Co-op] Failed to find entity for server-sent server harvested update");
+                return;
+            }
+
+            Harvest harvest = GetEntityHarvest(e.entity);
+            if (harvest == null){
+                RCMManager.Log("[Co-op] Failed to find entity harvest event for server-sent server harvested update");
+                return;
+            }
+
+            Patch_Harvest_Run.Original(harvest, e.entity);
+        }
+
+        [HarmonyPatch(typeof(Harvest), "Update")] public static class Patch_Harvest_Update{
+            [HarmonyPrefix] public static bool Prefix(Harvest __instance, UpdateStatus __result){
+                __result = UpdateStatus.Continue;
+                if (is_client){
+                    switch (__instance._currentState){
+                        case Harvest.State.ExchangeLoadWithCredits:
+                            if (!__instance._loadExchangeHasStarted){
+                                __instance._loadExchangeHasStarted = true;
+                                __instance._loadExchangeStartTime = Time.time;
+                                if (__instance.exchangeLoadParticleSystem)
+                                    __instance.exchangeLoadParticleSystem.Play();
+                                if (__instance.exchangeLoadAudioSource)
+                                    __instance.exchangeLoadAudioSource.Play();
+                            }
+                            break;
+                        case Harvest.State.Idle: 
+                            __result = UpdateStatus.Stop; 
+                            goto case Harvest.State.Pause;
+                        case Harvest.State.Pause:
+                            if (__instance.harvestParticleSystem && __instance.harvestParticleSystem.isPlaying)
+                                __instance.harvestParticleSystem.Stop();
+                            if (__instance.harvestAudioSource && __instance.harvestAudioSource.isPlaying)
+                                __instance.harvestAudioSource.Stop();
+                            if (__instance.exchangeLoadParticleSystem && __instance.exchangeLoadParticleSystem.isPlaying)
+                                __instance.exchangeLoadParticleSystem.Stop();
+                            break;
+                    }
+                    return false;
+                }
+
+                int num = (int)__instance._self.GainCreditsAmount;
+                switch (__instance._currentState){
+                    case Harvest.State.MoveToCrystal:
+                        if (__instance._self.IsMoving){ } 
+                        else if (__instance._grid.World2Grid(__instance._self.Position) == __instance._self.ClaimedCell && __instance._grid.Identify(__instance._self.Position) == WorldObject.Crystal){
+                            SendServerInGamePacket(new ServerHarvestStateChange(__instance._self, __instance._currentState, Harvest.State.Harvest));
+                            __instance._currentState = Harvest.State.Harvest;
+                            if (__instance.harvestParticleSystem)
+                                __instance.harvestParticleSystem.Play();
+                            if (__instance.harvestAudioSource)
+                                __instance.harvestAudioSource.Play();
+                        } else __instance.ClaimClosestCrystalAndMoveToIt();
+                        return false;
+                    case Harvest.State.Harvest:
+                        if (__instance._currentLoad >= (float)num){
+                            SendServerInGamePacket(new ServerHarvestStateChange(__instance._self, __instance._currentState, Harvest.State.MoveToRefinery));
+                            __instance._currentState = Harvest.State.MoveToRefinery;
+                            if (__instance.harvestParticleSystem)
+                                __instance.harvestParticleSystem.Stop();
+                            if (__instance.harvestAudioSource)
+                                __instance.harvestAudioSource.Stop();
+                        } else if (__instance._grid.Identify(__instance._self.Position) != WorldObject.Crystal){
+                            SendServerInGamePacket(new ServerHarvestStateChange(__instance._self, __instance._currentState, Harvest.State.MoveToCrystal));
+                            __instance._currentState = Harvest.State.MoveToCrystal;
+                            if (__instance.harvestParticleSystem)
+                                __instance.harvestParticleSystem.Stop();
+                            if (__instance.harvestAudioSource)
+                                __instance.harvestAudioSource.Stop();
+                        } else if (__instance._loadFraction >= 1f){
+                            float num2 = __instance._grid.RemoveCrystals(__instance._self.Position, __instance._loadFraction);
+                            __instance._loadFraction -= num2;
+                            __instance._currentLoad += num2;
+                            if (__instance._currentLoad > (float)num)
+                                __instance._currentLoad = (float)num;
+                            SendServerInGamePacket(new ServerHarvestHarvested(__instance._self, __instance._currentLoad));
+                            __instance.UpdateCrystalFillImage((float)num, __instance._currentLoad, num2);
+                        } else __instance._loadFraction += Time.deltaTime * __instance._self.MaxArmor;
+                        return false;
+                    case Harvest.State.MoveToRefinery:
+                        __instance._self.DisclaimCell();
+                        if (!__instance._currentRefineryToGoTo || !__instance._currentRefineryToGoTo.StillExists)
+                            __instance.MoveToClosestRefinery();
+                        else if (__instance._self.IsMoving){ }
+                        else if (CellHelper.MinDistanceBetween(__instance._self.CurrentCell, __instance._currentRefineryToGoTo.OccupiedCells) > 2f)
+                            __instance.MoveToClosestRefinery();
+                        else{
+                            SendServerInGamePacket(new ServerHarvestStateChange(__instance._self, __instance._currentState, Harvest.State.ExchangeLoadWithCredits));
+                            __instance._currentState = Harvest.State.ExchangeLoadWithCredits;
+                        }
+                        return false;
+                    case Harvest.State.ExchangeLoadWithCredits:
+                        if (!__instance._loadExchangeHasStarted){
+                            __instance._loadExchangeHasStarted = true;
+                            __instance._loadExchangeStartTime = Time.time;
+                            if (__instance.exchangeLoadParticleSystem)
+                                __instance.exchangeLoadParticleSystem.Play();
+                            if (__instance.exchangeLoadAudioSource)
+                                __instance.exchangeLoadAudioSource.Play();
+                        }
+                        if (__instance._loadExchangeHasStarted && Time.time - __instance._loadExchangeStartTime >= __instance.delayBeforeExchangeHappens){
+                            __instance._loadExchangeHasStarted = false;
+                            PlayerManager.AddMoneyTo(__instance._currentLoad, EntitiesManager.GetEntityPlayerID(__instance._self));
+                            __instance.UpdateCrystalFillImage((float)num, 0f, -__instance._currentLoad);
+                            __instance._currentLoad = 0f;
+                            __instance._currentRefineryToGoTo.PlayRefineryExchangeLoadParticleSystem();
+                            __instance._currentRefineryToGoTo = null;
+                            if (__instance.exchangeLoadParticleSystem)
+                                __instance.exchangeLoadParticleSystem.Stop();
+                            SendServerInGamePacket(new ServerHarvestStateChange(__instance._self, __instance._currentState, Harvest.State.MoveToCrystal));
+                            __instance._currentState = Harvest.State.MoveToCrystal;
+                        }
+                        return false;
+                    case Harvest.State.Idle:
+                        __result = UpdateStatus.Stop;
+                        goto case Harvest.State.Pause;
+                    case Harvest.State.Pause:
+                        __instance._self.DisclaimCell();
+                        if (__instance.harvestParticleSystem && __instance.harvestParticleSystem.isPlaying)
+                            __instance.harvestParticleSystem.Stop();
+                        if (__instance.harvestAudioSource && __instance.harvestAudioSource.isPlaying)
+                            __instance.harvestAudioSource.Stop();
+                        if (__instance.exchangeLoadParticleSystem && __instance.exchangeLoadParticleSystem.isPlaying)
+                            __instance.exchangeLoadParticleSystem.Stop();
+                        return false;
+                }
+                return false;
+            }
+        }
+        // NOTE: this one doesn't necessarily have to be sync'd, as client will always do this themselves...
+        [HarmonyPatch(typeof(Harvest), "Run")] public static class Patch_Harvest_Run{
+            [HarmonyPrefix] public static bool Prefix(Harvest __instance, EventPayload payload, UpdateStatus __result){
+                if (is_client){
+                    __instance._currentState = Harvest.State.Pause;
+                    if (!__instance._hasBeenInitialized)
+                        __instance.Init();
+                    __instance._self = payload.Self;
+                    __result = UpdateStatus.Continue;
+                    return false;
+                }
+                __instance._self = payload.Self;
+                SendServerInGamePacket(new ServerHarvestRun(__instance._self));
+                return true;
+            }
+            public static void Original(Harvest __instance, EntityController self){
+                if (!__instance._hasBeenInitialized)
+                    __instance.Init();
+                __instance._self = self;
+                __instance._currentState = Harvest.State.MoveToCrystal;
+                __instance._givenHarvestPosition = null;
+                __instance._currentRefineryToGoTo = null;
+                __instance._self.isHarvesting = true;
+                if (__instance.harvestParticleSystem && __instance.harvestParticleSystem.isPlaying)
+                    __instance.harvestParticleSystem.Stop();
+                if (__instance.harvestAudioSource && __instance.harvestAudioSource.isPlaying)
+                    __instance.harvestAudioSource.Stop();
+            }
+        }
+        [HarmonyPatch(typeof(Harvest), "Stop")] public static class Patch_Harvest_Stop{
+            [HarmonyPrefix] public static bool Prefix(Harvest __instance){
+                if (is_client) return false;
+
+                if (!__instance._self)
+                    return false;
+                if (!__instance._hasBeenInitialized)
+                    __instance.Init();
+
+                SendServerInGamePacket(new ServerHarvestStateChange(__instance._self, __instance._currentState, Harvest.State.Idle));
+                __instance._currentState = Harvest.State.Idle;
+                __instance._self.isHarvesting = false;
+                return false;
+            }
+        }
+        [HarmonyPatch(typeof(Harvest), "Pause")] public static class Patch_Harvest_Pause{
+            [HarmonyPrefix] public static bool Prefix(Harvest __instance){
+                if (is_client) return false;
+
+                if (__instance._currentState == Harvest.State.Pause)
+                    return false;
+                if (!__instance._self)
+                    return false;
+                if (!__instance._hasBeenInitialized)
+                    __instance.Init();
+
+                __instance._stateBeforePaused = __instance._currentState;
+                SendServerInGamePacket(new ServerHarvestStateChange(__instance._self, __instance._currentState, Harvest.State.Pause));
+                __instance._currentState = Harvest.State.Pause;
+                return false;
+            }
+        }
+        [HarmonyPatch(typeof(Harvest), "Resume")] public static class Patch_Harvest_Resume{
+            [HarmonyPrefix] public static bool Prefix(Harvest __instance){
+                if (is_client) return false;
+
+                if (__instance._currentState != Harvest.State.Pause)
+                    return false;
+                if (!__instance._self)
+                    return false;
+                if (!__instance._hasBeenInitialized)
+                    __instance.Init();
+
+                SendServerInGamePacket(new ServerHarvestStateChange(__instance._self, __instance._currentState, __instance._stateBeforePaused));
+                __instance._currentState = __instance._stateBeforePaused;
+                return false;
+            }
+        }
+
+        #endregion
 
     }
 }

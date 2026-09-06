@@ -16,7 +16,6 @@ namespace RCM_Coop.Network{
     internal class GameClient : NetworkedGame{
         public GameClient(Session session){
             this.session = session;
-            players = new PlayerManager();
             session.data_recieved_callback = RouteOnDataRecieved;
             session.connection_terminated_callback = RouteOnConnectionTerminated;
             session.connection_opened_callback = RouteOnConnectionOpened;
@@ -38,7 +37,7 @@ namespace RCM_Coop.Network{
                     switch (packet){
                         case ServerJoinResponseOk e:
                             RCMManager.Log($"[Co-op] accepted into session, waiting for host...");
-                            players.AddOurselves(e.player_id, submited_color);
+                            PlayerManager.AddOurselves(e.player_id, submited_color);
                             // enter awaiting host screen
                             break;
                         case ServerJoinResponseFailed e:
@@ -57,11 +56,11 @@ namespace RCM_Coop.Network{
                             break;
                         case ServerPlayerHasJoined e:
                             RCMManager.Log($"[Co-op] player joined: {e.username}");
-                            players.AddPlayer(e.username, e.player_id, e.color);
+                            PlayerManager.AddPlayer(e.username, e.player_id, e.color);
                             break;
                         case ServerPlayerHasLeft e:
                             RCMManager.Log($"[Co-op] player left: {PlayerManager.GetPlayer(e.player_id)?.username}");
-                            players.RemovePlayer(e.player_id);
+                            PlayerManager.RemovePlayer(e.player_id);
                             break;
                         case ServerFullEntityData e:
                             RCMManager.Log($"[Co-op] recieved entities list");
@@ -126,10 +125,13 @@ namespace RCM_Coop.Network{
                             if (e.entity != null) Patch_EntityController_TakeDamage.Original(e.entity, e.new_health_value, e.originator, e.dont_trigger_has_damaged, e.ignore_armor); 
                             break;
                         case ServerUnitProduce e:
-                            if (e.entity != null) Patch_EntityController_Produce.Original(e.entity, e.instant_production, e.for_free, e.dont_trigger_events); 
+                            Patch_EntityController_Produce.Recieve(e); 
                             break;
                         case ServerUnitAbortProduction e:
-                            if (e.entity != null) Patch_EntityController_AbortProduction.Original(e.entity); 
+                            Patch_EntityController_AbortProduction.Recieve(e); 
+                            break;
+                        case ServerUnitProductionComplete e:
+                            Patch_EntityController_UpdateProduction.Recieve(e);
                             break;
                         case ServerUnitChargeMana e:
                             if (e.entity != null) Patch_EntityController_ChargeMana.Original(e.entity, e.new_mana_value, e.display_delta); 
@@ -168,6 +170,20 @@ namespace RCM_Coop.Network{
                             break;
                         case ServerPlacementReleased e:
                             CoopManager.RecievedReleasePlacementGhost(e.ghost_id);
+                            break;
+
+                        case ServerMoneyUpdate e:
+                            PlayerManager.RecieveMoneyUpdate(e);
+                            break;
+
+                        case ServerHarvestStateChange e:
+                            CoopManager.RecievedHarvestStateChange(e);
+                            break;
+                        case ServerHarvestRun e:
+                            CoopManager.RecievedHarvestRun(e);
+                            break;
+                        case ServerHarvestHarvested e:
+                            CoopManager.RecievedHarvested(e);
                             break;
                     }
             } catch (Exception ex){

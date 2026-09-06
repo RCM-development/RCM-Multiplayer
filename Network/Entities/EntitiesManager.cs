@@ -55,15 +55,16 @@ namespace RCM_Coop.Network.Entities{
         }
         #endregion
 
-
+        public static byte GetEntityPlayerID(EntityController entity){
+            if (entity != null){
+                var val = NetworkedEntities.EntityFromEntity(entity);
+                return val.owning_player;
+            }
+            return 255;
+        }
         public static PlayerManager.Player GetEntityPlayer(EntityController entity){
             if (entity != null){
                 var val = NetworkedEntities.EntityFromEntity(entity);
-                bool is_engi = (entity.Role & UnitRole.Engineer) > 0;
-                if (is_engi)
-                {
-                    RCMManager.Log($"[Co-op] NOTE: engi get player called, owner_id={val.owning_player}");
-                }
                 return PlayerManager.GetPlayer(val.owning_player);
             }
             return null;
@@ -74,13 +75,6 @@ namespace RCM_Coop.Network.Entities{
             PlayerManager.Player entity_owner = EntitiesManager.GetEntityPlayer(entity);
             byte owner_id = 255;
             if (entity_owner != null) owner_id = entity_owner.id;
-
-
-            bool is_engi = (entity.Role & UnitRole.Engineer) > 0;
-            if (is_engi)
-            {
-                RCMManager.Log($"[Co-op] NOTE: engi ownership status checked, has_player={entity_owner != null}, owner_id={owner_id}, our_id={PlayerManager.GetOurPlayerID()}");
-            }
 
             // basically if our player ID matches or unit has no known owner and we're server host
             return ((owner_id == PlayerManager.GetOurPlayerID() && owner_id != 255) || (owner_id == 255 && CoopManager.IsServerUp()));

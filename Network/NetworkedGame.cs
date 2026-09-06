@@ -8,6 +8,5 @@ namespace RCM_Coop.Network{
 
     internal class NetworkedGame{
         protected Session session;
-        protected PlayerManager players;
     }
 }
