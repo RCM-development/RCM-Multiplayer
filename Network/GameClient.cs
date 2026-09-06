@@ -192,6 +192,10 @@ namespace RCM_Coop.Network{
                         case ServerGameLose e:
                             Patch_FinishLevel_Lose_Static.Original(e.position);
                             break;
+
+                        case ServerRequestDropComplete e:
+                            Patch_Drop_Start.ClientRecieve(e);
+                            break;
                     }
             } catch (Exception ex){
                 RCMManager.Log($"[Co-op] failed to read recieved packets: {ex.Message} callstack: {ex.StackTrace}");

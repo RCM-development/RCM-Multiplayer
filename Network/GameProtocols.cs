@@ -79,6 +79,8 @@ namespace RCM_Coop.Network{
             ServerGameWin,
             ServerGameLose,
             //
+            ClientRequestDrop,
+            ServerRequestDropComplete,
             ClientMapLoaded, // {nil}
             ServerEntitiesPositionUpdate, // {}
         }
@@ -142,6 +144,8 @@ namespace RCM_Coop.Network{
                     case proto.ServerHarvestHarvested:          yield return new ServerHarvestHarvested(packet); break;
                     case proto.ServerGameWin:                   yield return new ServerGameWin(packet); break;
                     case proto.ServerGameLose:                  yield return new ServerGameLose(packet); break;
+                    case proto.ClientRequestDrop:               yield return new ClientRequestDrop(packet); break;
+                    case proto.ServerRequestDropComplete:       yield return new ServerRequestDropComplete(packet); break;
                     default: yield break;
             }}
         }
@@ -1350,6 +1354,42 @@ namespace RCM_Coop.Network{
             }
             public ServerGameLose(PacketReader packet){
                 position = DeseralizePosition(packet);
+            }
+        }        
+        public class ClientRequestDrop : SerializablePacket{
+            public ushort request_id;
+            public string entity_id;
+            public ClientRequestDrop(ushort request_id, string entity_id){
+                this.request_id = request_id; this.entity_id = entity_id;
+            }
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ClientRequestDrop);
+                packet.SerializeShort((short)request_id);
+                packet.SerializeString(entity_id);
+                return packet.GetData();
+            }
+            public ClientRequestDrop(PacketReader packet){
+                request_id = (ushort)packet.DeserializeShort();
+                entity_id = packet.DeserializeString();
+            }
+        }
+        public class ServerRequestDropComplete : SerializablePacket{
+            public ushort request_id;
+            public EntityController entity;
+            public ServerRequestDropComplete(ushort request_id, EntityController entity){
+                this.request_id = request_id; this.entity = entity;
+            }
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ServerRequestDropComplete);
+                packet.SerializeShort((short)request_id);
+                SerializeEntityController(packet, entity);
+                return packet.GetData();
+            }
+            public ServerRequestDropComplete(PacketReader packet){
+                request_id = (ushort)packet.DeserializeShort();
+                entity = DeserializeEntityController(packet);
             }
         }
     }

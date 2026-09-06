@@ -1663,6 +1663,78 @@ namespace RCM_Coop {
 
         #endregion
 
+        #region DROP SYNC
+        static Dictionary<ushort, Drop> drop_requests = new Dictionary<ushort, Drop>();
+        [HarmonyPatch(typeof(Drop), "Start")] public static class Patch_Drop_Start{
+            [HarmonyPrefix] public static bool Prefix(Drop __instance){
+                if (!is_client) return true;
+                // all the client does at this moment is request to spawn in the specific entity
+                ushort desig_id = (ushort)UnityEngine.Random.Range(0, ushort.MaxValue);
+                drop_requests.Add(desig_id, __instance);
 
+                SendClientInGamePacket(new ClientRequestDrop(desig_id, __instance.entityId));
+                return false;
+            }
+            public static void ServerRecieve(ClientRequestDrop e){
+                // spawn entity and fire back with entity info
+                EntityController entity = EntityFactory.InstantiateEntity(e.entity_id, Vector3.zero, null, "", "", null, UnitRole.None, false, "DropButton");
+                SendServerInGamePacket(new ServerRequestDropComplete(e.request_id, entity));
+            }
+            public static void ClientRecieve(ServerRequestDropComplete e){
+                // restore drop object from dictionary
+                Drop drop = null;
+                if (!drop_requests.TryGetValue(e.request_id, out drop)){
+                    RCMManager.Log("[Co-op] Failed to find drop request for server-sent drop complete packet");
+                    return;
+                }
+                drop_requests.Remove(e.request_id);
+
+                Sprite sprite = EntityBalancingStore.EntityImage(drop.entityId);
+                drop.buttonManager.SetIcon(sprite);
+                drop._isSingleUse = EntityBalancingStore.CombatValue(drop.entityId) == -1;
+                ShowTooltipWhenHovering component = drop.gameObject.GetComponent<ShowTooltipWhenHovering>();
+                string text = Loca.BlueprintName(drop.entityId);
+                string text2 = DescriptionStore.BlueprintDescription(drop.entityId);
+                string text3 = UIHelper.ParseDescriptionText(text, drop.entityId);
+                List<ParsedData> list;
+                string text4 = UIHelper.ParseDescriptionText(text2, drop.entityId, true, out list, null, false);
+                if (SceneManagerWrapper.IsGameSceneLoadedOrActive)
+                {
+                    drop._dropEntity = e.entity;
+                    if (drop._dropEntity != null)
+                    {
+                        text4 += "\n\n";
+                        string text5 = text4;
+                        string text6;
+                        switch (drop._dropEntity.SkillInfo.targetOrigin)
+                        {
+                            case TargetOrigin.Self:
+                                text6 = Loca.Global("dropActivatesAtOnce", Array.Empty<string>());
+                                break;
+                            case TargetOrigin.ChosenEntity:
+                                text6 = Loca.Global("dropChooseEntity", Array.Empty<string>());
+                                break;
+                            case TargetOrigin.ChosenLocation:
+                                text6 = Loca.Global("dropChooseLocation", Array.Empty<string>());
+                                break;
+                            default:
+                                throw new ArgumentOutOfRangeException();
+                        }
+                        text4 = text5 + text6;
+                    }
+                    EventManager.Subscribe<IMouseRectangleInputListener>(drop, "Player");
+                    UserInput.Subscribe(drop);
+                }
+                List<TooltipData> list2 = new List<TooltipData> { new TooltipData("<b>" + text3 + "</b>\n" + text4) };
+                UIHelper.AddParsedItemsToTooltip(list2, null, list, true, false);
+                component.tooltipDataList = list2;
+                component.isAlreadyLocalized = true;
+                if (drop._isSingleUse)
+                {
+                    drop.isSingleUseUI.gameObject.SetActive(true);
+                }
+            }
+        }
+        #endregion
     }
 }

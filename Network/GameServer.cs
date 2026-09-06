@@ -12,6 +12,7 @@ using TestMod;
 using UnityEngine;
 using static LandscapeGenerator;
 using static Profiler;
+using static RCM_Coop.CoopManager;
 using static RCM_Coop.Network.Entities.EntitiesManager;
 using static RCM_Coop.Network.GameProtocols;
 using static RCM_Coop.Network.GameProtocols.ServerJoinResponseFailed;
@@ -167,6 +168,12 @@ namespace RCM_Coop{
                             if (IsAuthenticated(client)){
                                 RCMManager.Log($"[Co-op] client sent engi build request");
                                 if (e.engi != null) CoopManager.RecievedPlacementRequest(e);
+                            }
+                            break;
+                        case ClientRequestDrop e:
+                            if (IsAuthenticated(client)){
+                                RCMManager.Log($"[Co-op] client sent drop request");
+                                Patch_Drop_Start.ServerRecieve(e);
                             }
                             break;
                         default:
