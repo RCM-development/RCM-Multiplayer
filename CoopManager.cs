@@ -207,34 +207,37 @@ namespace RCM_Coop {
         #endregion
 
         #region game over stubs
-        // patch out game losing conditions
-        [HarmonyPatch(typeof(Game), "Lose")]
-        public static class Patch_Game_Lose {
-            [HarmonyPrefix]
-            public static bool Prefix() {
-                if (is_client) {
-                    return false;
-                }
+        //[HarmonyPatch(typeof(Game), "Lose")] public static class Patch_Game_Lose {
+        //    [HarmonyPrefix] public static bool Prefix() {
+        //        if (is_client) {
+        //            return false;
+        //        }
+        //        return true;
+        //    }
+        //}
+        [HarmonyPatch(typeof(FinishLevel), "Lose_Static")] public static class Patch_FinishLevel_Lose_Static {
+            [HarmonyPrefix] public static bool Prefix(Vector3 positionOfLastBuilding) {
+                if (is_client) return false;
+                SendServerInGamePacket(new ServerGameLose(positionOfLastBuilding));
                 return true;
-            } }
-        [HarmonyPatch(typeof(FinishLevel), "Lose_Static")]
-        public static class Patch_FinishLevel_Lose_Static {
-            [HarmonyPrefix]
-            public static bool Prefix() {
-                if (is_client) {
-                    return false;
-                }
+            }
+            [HarmonyReversePatch] public static void Original(Vector3 positionOfLastBuilding) { throw new ree("err"); }
+        }
+        [HarmonyPatch(typeof(FinishLevel), "Win_Static")] public static class Patch_FinishLevel_Win_Static {
+            [HarmonyPrefix] public static bool Prefix(Vector3 positionOfLastBuilding, AiBehaviour ai) {
+                if (is_client) return false;
+                SendServerInGamePacket(new ServerGameWin(positionOfLastBuilding));
                 return true;
-            } }
-        [HarmonyPatch(typeof(FinishLevel), "Win_Static")]
-        public static class Patch_FinishLevel_Win_Static {
-            [HarmonyPrefix]
-            public static bool Prefix() {
-                if (is_client) {
-                    return false;
-                }
+            } 
+            [HarmonyReversePatch] public static void Original(Vector3 positionOfLastBuilding, AiBehaviour ai) { throw new ree("err"); }
+        }
+        public static AiBehaviour last_ai = null;
+        [HarmonyPatch(typeof(AiBehaviour), "Start")] public static class Patch_AiBehaviour_Start {
+            [HarmonyPrefix] public static bool Prefix(AiBehaviour __instance) {
+                last_ai = __instance;
                 return true;
-            } }
+            } 
+        }
         #endregion
 
 
@@ -504,6 +507,7 @@ namespace RCM_Coop {
                         UnitCap.RemoveFromProductCount(__instance._productionInfo.entityId, __instance.IsControlledByAi, 1);
                     }
                     int num = forFree ? int.MaxValue : __instance.gameObject.tag == "Player" ? PlayerManager.GetMoney(EntitiesManager.GetEntityPlayerID(__instance)) : Bank.ActualBalance(__instance.gameObject.tag);
+                    //int num = forFree ? int.MaxValue : Bank.ActualBalance(__instance.gameObject.tag);
                     if (!__instance.IsProductionPossible(num)) return false;
 
                     __instance._productionInfo.doNotTriggerHasProducedEvent = doNotTriggerHasProducedEvent;
@@ -528,7 +532,7 @@ namespace RCM_Coop {
                     if (__instance.ongoingProductionIndicator && !instantProduction)
                         __instance.ongoingProductionIndicator.SetActive(true);
                 }
-                return true;
+                return false;
             }
             public static void Recieve(ServerUnitProduce e){
                 if (e.entity == null){
@@ -1030,7 +1034,9 @@ namespace RCM_Coop {
             }
         }
         public static void RecievedPlacementIndicator(ServerPlacementBegin request){
-            GameObject.Instantiate<GameObject>((request.is_1x1) ? PlaceBuildings._instance.placementEffect1X1 : PlaceBuildings._instance.placementEffect2X2, request.position, Quaternion.identity);
+            GameObject.Instantiate<GameObject>((request.cells.Count == 1) ? PlaceBuildings._instance.placementEffect1X1 : PlaceBuildings._instance.placementEffect2X2, request.position, Quaternion.identity);
+            if (PlaceBuildings._instance != null)
+                PlaceBuildings._instance._grid.MarkCellsAsBuilding(request.cells);
         }
         public static void RecievedPlacementShockwave(ServerPlacementShockwave request){
             Game.ShaderTextures.StartShockwave(request.position, (request.is_1x1) ? PlaceBuildings._instance.shockwaveSize1X1 : PlaceBuildings._instance.shockwaveSize2X2);
@@ -1165,7 +1171,7 @@ namespace RCM_Coop {
                                         }
 
                                         // sync here
-                                        SendServerInGamePacket(new ServerPlacementBegin(cells.Count == 1, placementPosition));
+                                        SendServerInGamePacket(new ServerPlacementBegin(cells, placementPosition));
                                         GameObject.Instantiate<GameObject>((cells.Count == 1) ? __instance.placementEffect1X1 : __instance.placementEffect2X2, placementPosition, Quaternion.identity);
                                         __instance.DestroyEntitiesOnCells(cells);
                                         __instance._grid.MarkCellsAsBuilding(cells);
@@ -1656,6 +1662,7 @@ namespace RCM_Coop {
         }
 
         #endregion
+
 
     }
 }

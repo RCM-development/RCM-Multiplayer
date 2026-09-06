@@ -76,6 +76,9 @@ namespace RCM_Coop.Network{
             ServerHarvestRun,
             ServerHarvestHarvested,
             //
+            ServerGameWin,
+            ServerGameLose,
+            //
             ClientMapLoaded, // {nil}
             ServerEntitiesPositionUpdate, // {}
         }
@@ -137,6 +140,8 @@ namespace RCM_Coop.Network{
                     case proto.ServerHarvestStateChange:        yield return new ServerHarvestStateChange(packet); break;
                     case proto.ServerHarvestRun:                yield return new ServerHarvestRun(packet); break;
                     case proto.ServerHarvestHarvested:          yield return new ServerHarvestHarvested(packet); break;
+                    case proto.ServerGameWin:                   yield return new ServerGameWin(packet); break;
+                    case proto.ServerGameLose:                  yield return new ServerGameLose(packet); break;
                     default: yield break;
             }}
         }
@@ -320,6 +325,18 @@ namespace RCM_Coop.Network{
             return result;
         }
         
+        static void SerializeVec2List(PacketWriter packet, List<Vector2Int> positions){
+            packet.SerializeByte((byte)positions.Count);
+            foreach (var v in positions)
+                SerializeVec2Int(packet, v);
+        }
+        static List<Vector2Int> DeserializeVec2List(PacketReader packet){
+            var result = new List<Vector2Int>();
+            int count = packet.DeserializeByte();
+            for (int i = 0; i < count; i++)
+                result.Add(DeserializeVec2Int(packet));
+            return result;
+        }
         static void SerializeVec2Int(PacketWriter packet, Vector2Int position){
             packet.SerializeShort((short)position.x);
             packet.SerializeShort((short)position.y);
@@ -1154,20 +1171,20 @@ namespace RCM_Coop.Network{
 
 
         public class ServerPlacementBegin : SerializablePacket{
-            public bool is_1x1;
+            public List<Vector2Int> cells;
             public Vector3 position;
-            public ServerPlacementBegin(bool is_1x1, Vector3 position){
-                this.is_1x1 = is_1x1; this.position = position;
+            public ServerPlacementBegin(List<Vector2Int> cells, Vector3 position){
+                this.cells = cells; this.position = position;
             }
             public override byte[] Serialize(){
                 PacketWriter packet = new();
                 packet.SerializeByte((byte)proto.ServerPlacementBegin);
-                packet.SerializeByte(is_1x1 ? (byte)1 : (byte)0);
+                SerializeVec2List(packet, cells);
                 SerializePosition(packet, position);
                 return packet.GetData();
             }
             public ServerPlacementBegin(PacketReader packet){
-                is_1x1 = packet.DeserializeByte() > 0;
+                cells = DeserializeVec2List(packet);
                 position = DeseralizePosition(packet);
             }
         }
@@ -1221,9 +1238,7 @@ namespace RCM_Coop.Network{
                 packet.SerializeString(entityId);
                 SerializePosition(packet, pos);
                 packet.SerializeShort((short)ghost_id);
-                packet.SerializeByte((byte)cells.Count);
-                foreach (var v in cells)
-                    SerializeVec2Int(packet, v);
+                SerializeVec2List(packet, cells);
 
                 return packet.GetData();
             }
@@ -1232,10 +1247,7 @@ namespace RCM_Coop.Network{
                 entityId = packet.DeserializeString();
                 pos = DeseralizePosition(packet);
                 ghost_id = (ushort)packet.DeserializeShort();
-                cells = new List<Vector2Int>();
-                int count = packet.DeserializeByte();
-                for (int i = 0; i < count; i++)
-                    cells.Add(DeserializeVec2Int(packet));
+                cells = DeserializeVec2List(packet);
             }
         }
         public class ServerMoneyUpdate : SerializablePacket{
@@ -1310,6 +1322,35 @@ namespace RCM_Coop.Network{
                 harvested_amount = packet.DeserializeShort();
             }
         }
-
+        public class ServerGameWin : SerializablePacket{
+            public Vector3 position;
+            public ServerGameWin(Vector3 position) {
+                this.position = position;
+            }
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ServerGameWin);
+                SerializePosition(packet, position);
+                return packet.GetData();
+            }
+            public ServerGameWin(PacketReader packet){
+                position = DeseralizePosition(packet);
+            }
+        }
+        public class ServerGameLose : SerializablePacket{
+            public Vector3 position;
+            public ServerGameLose(Vector3 position){
+                this.position = position;
+            }
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ServerGameLose);
+                SerializePosition(packet, position);
+                return packet.GetData();
+            }
+            public ServerGameLose(PacketReader packet){
+                position = DeseralizePosition(packet);
+            }
+        }
     }
 }

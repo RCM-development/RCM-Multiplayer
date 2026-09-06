@@ -59,11 +59,9 @@ namespace RCM_Coop.Network{
                 yield return p;
         }
 
-        // only happens for non-hosts since host runs regular 
         public static int GetMoney(byte player){
             // fallback to host's money if nil player
             if (player == 255) player = GetHostPlayerID();
-
             Player p = GetPlayer(player);
             if (p == null){
                 // assume no players, so just draw from actual game's bank

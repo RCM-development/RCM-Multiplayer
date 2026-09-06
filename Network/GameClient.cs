@@ -185,6 +185,13 @@ namespace RCM_Coop.Network{
                         case ServerHarvestHarvested e:
                             CoopManager.RecievedHarvested(e);
                             break;
+
+                        case ServerGameWin e:
+                            Patch_FinishLevel_Win_Static.Original(e.position, CoopManager.last_ai);
+                            break;
+                        case ServerGameLose e:
+                            Patch_FinishLevel_Lose_Static.Original(e.position);
+                            break;
                     }
             } catch (Exception ex){
                 RCMManager.Log($"[Co-op] failed to read recieved packets: {ex.Message} callstack: {ex.StackTrace}");
