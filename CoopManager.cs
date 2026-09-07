@@ -1672,15 +1672,20 @@ namespace RCM_Coop {
                 ushort desig_id = (ushort)UnityEngine.Random.Range(0, ushort.MaxValue);
                 drop_requests.Add(desig_id, __instance);
 
-                SendClientInGamePacket(new ClientRequestDrop(desig_id, __instance.entityId));
-                return false;
+                if (SceneManagerWrapper.IsGameSceneLoadedOrActive){
+                    SendClientInGamePacket(new ClientRequestDrop(desig_id, __instance.entityId));
+                    return false;
+                }
+                return true;
             }
             public static void ServerRecieve(ClientRequestDrop e){
+                if (!SceneManagerWrapper.IsGameSceneLoadedOrActive) return;
                 // spawn entity and fire back with entity info
                 EntityController entity = EntityFactory.InstantiateEntity(e.entity_id, Vector3.zero, null, "", "", null, UnitRole.None, false, "DropButton");
                 SendServerInGamePacket(new ServerRequestDropComplete(e.request_id, entity));
             }
             public static void ClientRecieve(ServerRequestDropComplete e){
+                RCMManager.Log("[Co-op] cleint is doing the drop...");
                 // restore drop object from dictionary
                 Drop drop = null;
                 if (!drop_requests.TryGetValue(e.request_id, out drop)){
@@ -1688,7 +1693,6 @@ namespace RCM_Coop {
                     return;
                 }
                 drop_requests.Remove(e.request_id);
-
                 Sprite sprite = EntityBalancingStore.EntityImage(drop.entityId);
                 drop.buttonManager.SetIcon(sprite);
                 drop._isSingleUse = EntityBalancingStore.CombatValue(drop.entityId) == -1;
@@ -1698,16 +1702,13 @@ namespace RCM_Coop {
                 string text3 = UIHelper.ParseDescriptionText(text, drop.entityId);
                 List<ParsedData> list;
                 string text4 = UIHelper.ParseDescriptionText(text2, drop.entityId, true, out list, null, false);
-                if (SceneManagerWrapper.IsGameSceneLoadedOrActive)
-                {
+                if (SceneManagerWrapper.IsGameSceneLoadedOrActive){
                     drop._dropEntity = e.entity;
-                    if (drop._dropEntity != null)
-                    {
+                    if (drop._dropEntity != null){
                         text4 += "\n\n";
                         string text5 = text4;
                         string text6;
-                        switch (drop._dropEntity.SkillInfo.targetOrigin)
-                        {
+                        switch (drop._dropEntity.SkillInfo.targetOrigin){
                             case TargetOrigin.Self:
                                 text6 = Loca.Global("dropActivatesAtOnce", Array.Empty<string>());
                                 break;
@@ -1730,9 +1731,8 @@ namespace RCM_Coop {
                 component.tooltipDataList = list2;
                 component.isAlreadyLocalized = true;
                 if (drop._isSingleUse)
-                {
                     drop.isSingleUseUI.gameObject.SetActive(true);
-                }
+                drop.buttonManager.UpdateUI();
             }
         }
         #endregion
