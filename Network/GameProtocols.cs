@@ -81,8 +81,16 @@ namespace RCM_Coop.Network{
             //
             ClientRequestDrop,
             ServerRequestDropComplete,
-            ClientMapLoaded, // {nil}
+            //
             ServerEntitiesPositionUpdate, // {}
+
+            // ui nav
+            ServerBeginNewRun, // when server clicks new run or continue run, prompts clients to open select unit screen
+            ServerReturnToMenu, // used to cancel all client actions and return them to main menu
+            ServerStageUpdated,
+            ServerBeginStageLoad,
+            ClientStartersSelected,
+            ClientMapLoaded, // this is the clients way of saying we want the data now
         }
         public static IEnumerable<SerializablePacket> DeserializePackets(byte[] data){
             PacketReader packet = new PacketReader(data);
@@ -146,6 +154,11 @@ namespace RCM_Coop.Network{
                     case proto.ServerGameLose:                  yield return new ServerGameLose(packet); break;
                     case proto.ClientRequestDrop:               yield return new ClientRequestDrop(packet); break;
                     case proto.ServerRequestDropComplete:       yield return new ServerRequestDropComplete(packet); break;
+                    case proto.ServerBeginNewRun:               yield return new ServerBeginNewRun(packet); break;
+                    case proto.ServerReturnToMenu:              yield return new ServerReturnToMenu(packet); break;
+                    case proto.ServerStageUpdated:              yield return new ServerStageUpdated(packet); break;
+                    case proto.ServerBeginStageLoad:            yield return new ServerBeginStageLoad(packet); break;
+                    case proto.ClientStartersSelected:          yield return new ClientStartersSelected(packet); break;
                     default: yield break;
             }}
         }
@@ -1392,5 +1405,74 @@ namespace RCM_Coop.Network{
                 entity = DeserializeEntityController(packet);
             }
         }
+
+
+        public class ServerBeginNewRun : SerializablePacket{
+            public ServerBeginNewRun(){ }
+            public override byte[] Serialize(){
+                // overkill as hell
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ServerBeginNewRun);
+                return packet.GetData();
+            }
+            public ServerBeginNewRun(PacketReader packet){ }
+        }
+        public class ServerReturnToMenu : SerializablePacket{
+            public ServerReturnToMenu(){ }
+            public override byte[] Serialize(){
+                // overkill as hell
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ServerReturnToMenu);
+                return packet.GetData();
+            }
+            public ServerReturnToMenu(PacketReader packet){ }
+        }
+        public class ServerStageUpdated : SerializablePacket{
+            public string json;
+            public string profile_json;
+            public ServerStageUpdated(string json, string profile_json){
+                this.json = json; this.profile_json = profile_json;
+            }
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ServerStageUpdated);
+                packet.SerializeString(json);
+                packet.SerializeString(profile_json);
+                return packet.GetData();
+            }
+            public ServerStageUpdated(PacketReader packet){
+                json = packet.DeserializeString();
+                profile_json = packet.DeserializeString();
+            }
+        }
+        public class ServerBeginStageLoad : SerializablePacket{
+            public string json;
+            public string profile_json;
+            public ServerBeginStageLoad(string json, string profile_json){
+                this.json = json; this.profile_json = profile_json;
+            }
+            public override byte[] Serialize(){
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ServerBeginStageLoad);
+                packet.SerializeString(json);
+                packet.SerializeString(profile_json);
+                return packet.GetData();
+            }
+            public ServerBeginStageLoad(PacketReader packet){
+                json = packet.DeserializeString();
+                profile_json = packet.DeserializeString();
+            }
+        }
+        public class ClientStartersSelected : SerializablePacket{
+            public ClientStartersSelected(){ }
+            public override byte[] Serialize(){
+                // overkill as hell
+                PacketWriter packet = new();
+                packet.SerializeByte((byte)proto.ClientStartersSelected);
+                return packet.GetData();
+            }
+            public ClientStartersSelected(PacketReader packet){ }
+        }
+
     }
 }

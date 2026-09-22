@@ -10,6 +10,18 @@ using static RCM_Coop.Network.GameProtocols;
 namespace RCM_Coop.Network{
 
     public static class PlayerManager{
+        public static void ClearIngameData(){
+            foreach (Player p in players){
+                if (p.id != GetHostPlayerID()){
+                    p.money = 0;
+                    CoopManager.SendServerInGamePacket(new ServerMoneyUpdate(p.id, p.money));
+            }}
+        }
+        public static void ClearPlayers()
+        {
+            players.Clear();
+        }
+
         public class Player{
             public byte id;
             public string username;

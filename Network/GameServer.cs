@@ -30,13 +30,24 @@ namespace RCM_Coop{
             session.connection_terminated_callback = RouteOnConnectionTerminated;
             session.connection_opened_callback = RouteOnConnectionOpened;
         }
+        public void Release() {
+            if (session == null) return;
+            session.Terminate();
+            session = null;
+        }
 
 
 
 
         HashSet<TcpClient> unconnected_clients = new();
 
-        class client_id_struct { public TcpClient client; public byte id; public bool is_ingame; }
+        enum client_state{
+            not_in_session,
+            in_menu,
+            in_game_awaiting_data,
+            in_game
+        }
+        class client_id_struct { public TcpClient client; public byte id; public client_state state; }
         List<client_id_struct> clients = new();
         bool IsAuthenticated(TcpClient client){
             foreach (var item in clients)
@@ -52,10 +63,10 @@ namespace RCM_Coop{
                     return item.id;
             return 255;
         }
-        void UpdateClientStatus(TcpClient client){
+        void UpdateClientStatus(TcpClient client, client_state new_state){
             foreach (var item in clients)
                 if (item.client == client){
-                    item.is_ingame = true;
+                    item.state = new_state;
                     return;
             }
             RCMManager.Log($"[Co-op] couldn't find client to update status of... {client.Client.RemoteEndPoint}");
@@ -104,18 +115,19 @@ namespace RCM_Coop{
                                     // send to everyone
                                     session.SendTCP(new ServerPlayerHasJoined(allocated_id, e.username, e.color));
                                     // add to linker & players
-                                    clients.Add(new() { client = client, id = allocated_id, is_ingame = false });
+                                    clients.Add(new() { client = client, id = allocated_id, state = client_state.not_in_session });
                                     PlayerManager.AddPlayer(e.username, allocated_id, e.color);
+
+                                    // prompt them to start joining if our game is in progress or initial rewards phase
+                                    if (SceneManagerWrapper.IsIntermissionScreen()
+                                    || SceneManagerWrapper.IsGame()
+                                    || SceneManagerWrapper.IsReward()
+                                    || SceneManagerWrapper.IsShop()
+                                    || SceneManagerWrapper.IsRunSetup()){
+                                        session.SendTCP(new ServerBeginNewRun(), client);
+                                    }
                                 }
                                 unconnected_clients.Remove(client);
-                            }
-                            break;
-                        case ClientMapLoaded e:
-                            if (IsAuthenticated(client)){
-                                RCMManager.Log($"[Co-op] client said green to go, sending all entity data");
-                                session.SendTCP(new ServerFullEntityData(EntitySerializer.CompileEntities()), client);
-                                // update player status to now be in game
-                                UpdateClientStatus(client);
                             }
                             break;
                         case ClientTimeSlow e:
@@ -176,6 +188,46 @@ namespace RCM_Coop{
                                 Patch_Drop_Start.ServerRecieve(e);
                             }
                             break;
+
+                        case ClientMapLoaded e:
+                            if (IsAuthenticated(client)){
+                                if (entities_spawned)
+                                {
+                                    RCMManager.Log($"[Co-op] client said green to go, sending all entity data");
+                                    session.SendTCP(new ServerFullEntityData(EntitySerializer.CompileEntities()), client);
+                                    // update player status to now be in game
+                                    UpdateClientStatus(client, client_state.in_game);
+                                }
+                                else
+                                {
+                                    RCMManager.Log($"[Co-op] client said green to go, however we haven't loaded yet, so just wait a sec on that data");
+                                    // update player status to be ready to recieve data
+                                    UpdateClientStatus(client, client_state.in_game_awaiting_data);
+                                }
+                            }
+                            break;
+                        case ClientStartersSelected e:
+                            if (IsAuthenticated(client)){
+                                RCMManager.Log($"[Co-op] client said starters selected, sending game save file");
+                                if (SceneManagerWrapper.IsGame() 
+                                || SceneManagerWrapper.IsIntermissionScreen()
+                                || SceneManagerWrapper.IsReward()
+                                || SceneManagerWrapper.IsShop())
+                                {
+                                    session.SendTCP(new ServerStageUpdated(Game.ToJson(), MetaGame._instance.ToJson()), client);
+                                    if (SceneManagerWrapper.IsGame())
+                                    {
+                                        SendServerMenuPacket(new ServerBeginStageLoad(last_written_savegame_json, MetaGame._instance.ToJson()));
+                                    }
+                                }
+                                // update player status to now be in game
+                                UpdateClientStatus(client, client_state.in_menu);
+                            }
+                            break;
+
+
+
+
                         default:
                             RCMManager.Log($"[Co-op] recieved packet of unsupported type: {packet.GetType().Name}");
                             break;
@@ -222,9 +274,35 @@ namespace RCM_Coop{
         }
         public void SendPacketToInGame(SerializablePacket packet){
             foreach (var item in clients)
-                if (item.is_ingame)
+                if (item.state == client_state.in_game)
                     session.SendTCP(packet, item.client);
         }
 
+        public void ResetClientLoadStatesForNextStage(){
+            entities_spawned = false;
+            SendServerMenuPacket(new ServerStageUpdated(Game.ToJson(), MetaGame._instance.ToJson()));
+            foreach (var item in clients){
+                if (item.state != client_state.not_in_session){ // still picking they starter unit?
+                    item.state = client_state.in_menu;
+                    return;
+        }}}
+        public void ResetClientLoadStatesForMainMenu(){
+            entities_spawned = false;
+            SendServerMenuPacket(new ServerReturnToMenu());
+            foreach (var item in clients){
+                if (item.state != client_state.not_in_session){ // still picking they starter unit?
+                    item.state = client_state.not_in_session;
+                    return;
+        }}}
+        bool entities_spawned = false;
+        public void BeginReplicatingGameEntities(){
+            entities_spawned = true;
+            foreach (var item in clients){
+                if (item.state == client_state.in_game_awaiting_data){
+                    item.state = client_state.in_game;
+                    session.SendTCP(new ServerFullEntityData(EntitySerializer.CompileEntities()), item.client);
+                    return;
+        }}
+        }
     }
 }

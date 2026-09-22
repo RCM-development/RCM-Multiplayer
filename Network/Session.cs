@@ -14,7 +14,7 @@ namespace RCM_Coop{
 
     public class Session{
         protected const int TcpPort = 5000;
-        protected const int MAX_PACKET_SIZE = 16384;
+        protected const int MAX_PACKET_SIZE = 131072;
         // NOTE: TEMPORARY FUNCTIONS TO HELP WITH LOCAL GAME TESTING
         public static async Task<Session> StartAutoAsync(){
             bool serverExists = CanConnectToServer();

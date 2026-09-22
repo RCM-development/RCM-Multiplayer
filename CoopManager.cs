@@ -6,8 +6,10 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
+using ArmanDoesStuff.Utilities;
 using BepInEx;
 using BepInEx.Bootstrap;
 using HarmonyLib;
@@ -23,6 +25,7 @@ using UnityEngine.Analytics;
 using UnityEngine.Networking.Types;
 using UnityEngine.Profiling;
 using UnityEngine.Rendering;
+using UnityEngine.SceneManagement;
 using UnityEngine.UIElements;
 using static EntityIdentifier;
 using static RCM_Coop.Network.GameProtocols;
@@ -55,6 +58,8 @@ namespace RCM_Coop {
         }
         static void UpdateUI() {
             mod.ClearFields();
+
+
             if (is_connecting)
             {
                 mod.CreateLabelField("connecting...");
@@ -74,7 +79,7 @@ namespace RCM_Coop {
                     mod.CreateLabelField("running as client");
                     mod.CreateButtonField("request data", RequestEntityData);
                 }
-                mod.CreateButtonField("disconnect", BeginDisconnect);
+                mod.CreateButtonField("disconnect", SessionTerminated);
             }
 
         }
@@ -102,16 +107,6 @@ namespace RCM_Coop {
             is_connecting = false;
             UpdateUI();
         }
-        static void BeginDisconnect()
-        {
-            if (session != null)
-            {
-                networked_game = null;
-                session.Terminate();
-                session = null;
-                UpdateUI();
-            }
-        }
         static void RequestEntityData()
         {
             RCMManager.Log("entity button pressed");
@@ -128,6 +123,13 @@ namespace RCM_Coop {
                 ((GameServer)networked_game).SendPacketToInGame(packet);
             }
         }
+        public static void SendServerMenuPacket(SerializablePacket packet){
+            if (IsServerUp())
+            {
+                ((GameServer)networked_game).SendPacketToAuthenticated(packet);
+            }
+        }
+        // there is no ingame packet that clients send, its all global cause we dont care about validation on their end
         public static void SendClientInGamePacket(SerializablePacket packet) {
             if (IsClientUp())
             {
@@ -135,13 +137,47 @@ namespace RCM_Coop {
             }
         }
         #endregion
+        #region DISCONNECTIONS
+        public static void SessionTerminated(){
+            // if we are a client, then return to main menu (dont worry about this if is host)
+            if (IsClientUp()){
+                if (networked_game != null){
+                    ((GameClient)networked_game).Release();
+                    networked_game = null;
+                }
+                if (session != null){
+                    session.Terminate(); // redundant call but harmless
+                    session = null;
+                }
+                ClearPlayers();
+                is_connecting = false;
+                UpdateUI();
+                SceneManagerWrapper.LoadMainMenu();
+                // we also then want to load our saved profile so we get all our unlocks etc back..
+                MetaGame.Instance.LoadFromCurrentMetaSaveGamePath();
+            }
+            if (IsServerUp()){
+                if (networked_game != null){
+                    ((GameServer)networked_game).Release();
+                    networked_game = null;
+                }
+                if (session != null){
+                    session.Terminate(); // redundant call but harmless
+                    session = null;
+                }
+                ClearPlayers();
+                is_connecting = false;
+                UpdateUI();
+            }
+        }
+
+        #endregion
 
         public class ree : Exception {
             public ree() { }
             public ree(string message) : base(message) { }
             public ree(string message, Exception inner) : base(message, inner) { }
         }
-
 
         #region map seeds
         // force seed
@@ -240,8 +276,287 @@ namespace RCM_Coop {
         }
         #endregion
 
+        #region UI STATE SYNC
+        // disable menu play buttons for clients
+        public static void RecievedStartNewRun()
+        {
+            // make sure we have specifically our save profile loaded so we can choose our own unlocked specialists for joining into other sessions...
+            MetaGame.Instance.LoadFromCurrentMetaSaveGamePath();
+            Patch_LoadScene_MainMenuStartNewRun.Original(LoadScene._instance);
+        }
+        [HarmonyPatch(typeof(LoadScene), "MainMenuStartNewRun")] public static class Patch_LoadScene_MainMenuStartNewRun {
+            [HarmonyPrefix] public static bool Prefix(LoadScene __instance) {
+                if (is_client) return false;
+                RCMManager.Log("main menu start new run button pressed, telling clients to pick units");
+                SendServerMenuPacket(new ServerBeginNewRun());
+                return true;
+            }
+            [HarmonyReversePatch] public static void Original(LoadScene __instance) { throw new ree("err"); }
+        }
+        [HarmonyPatch(typeof(StartNewRun), "OnClick")] public static class Patch_StartNewRun_OnClick {
+            [HarmonyPrefix] public static bool Prefix(LoadScene __instance) {
+                if (is_client) return false;
+                RCMManager.Log("StartNewRun onclick pressed, telling clients to pick units");
+                SendServerMenuPacket(new ServerBeginNewRun());
+                return true;
+            }
+            [HarmonyReversePatch] public static void Original(LoadScene __instance) { throw new ree("err"); }
+        }
+        [HarmonyPatch(typeof(LoadScene), "MainMenuContinueRun")] public static class Patch_LoadScene_MainMenuContinueRun {
+            [HarmonyPrefix] public static bool Prefix(LoadScene __instance) {
+                if (is_client) return false;
+                RCMManager.Log("main menu continue button pressed, telling clients to pick units");
+                SendServerMenuPacket(new ServerBeginNewRun());
+                return true;
+            }
+        }
 
 
+        [HarmonyPatch(typeof(RunSetup), "OnStartRunButtonClicked")] public static class Patch_RunSetup_OnStartRunButtonClicked {
+            [HarmonyPrefix] public static bool Prefix(RunSetup __instance) {
+                if (is_client){
+                    string entityId2 = __instance._economyCards[__instance._currentEconomyCardIndex].EntityId;
+                    string entityId3 = __instance._specialistCards[__instance._currentSpecialistCardIndex].EntityId;
+                    client_specialist_entityid = entityId3;
+                    client_drops = new List<string>();
+                    client_blueprints = new List<string>();
+                    client_blueprints.Add(EntityBalancingStore.FactoryEntityId(entityId2));
+                    client_blueprints.Add(EntityBalancingStore.FactoryEntityId(entityId3) ?? entityId3);
+                    SendClientInGamePacket(new ClientStartersSelected());
+                }
+                RCMManager.Log("Beginning startrunbuttonclicked");
+                return true;
+            }
+            [HarmonyPrefix] public static void Postfix() {
+                RCMManager.Log("ending startrunbuttonclicked");
+            }
+
+
+        }
+        static string client_specialist_entityid;
+        static List<string> client_blueprints = new();
+        static List<string> client_drops = new();
+        public static void RecievedIntermissionStateChange(string savegame_json, string profile_json, bool reload_stage_map = true){
+            ApplySaveProfile(profile_json);
+            Game.InitFromJson(savegame_json);
+            Game.Specialists = new List<string>();
+            if (!string.IsNullOrWhiteSpace(client_specialist_entityid)) Game.Specialists.Add(client_specialist_entityid);
+            Game.CardsInDeck = client_blueprints;
+            Game.Drops = client_drops;
+            // if we aren't on the right scene then lets send us in...
+            // actually just make us reload the entire scene every single time !
+            if (!SceneManagerWrapper.IsRunSetup() && reload_stage_map)
+            {
+                RCMManager.Log("reloading Intermission screen stage...");
+                // try to refresh the scene if we can
+                if (Game.StageMap != null)
+                {
+                    SceneManagerWrapper.LoadIntermissionScreen();
+                }
+            }
+        }
+
+        public static void ApplySaveProfile(string profile_json){
+            Dictionary<string, string> dictionary = FromJson.Object(profile_json);
+            if (dictionary == null){
+                MetaGame.Instance.Reset();
+                RCMManager.Log("ERROR: FAILED TO LOAD JSON FROM HOST'S SAVE FILE!!!");
+                return;
+            }
+            MetaGame.Instance.CurrentAscensionLevel = FromJson.Int(dictionary["currentAscensionLevel"]);
+            MetaGame.Instance.MaxReachedAscensionLevelInternal = FromJson.Int(dictionary["maxReachedAscensionLevel"]);
+            MetaGame.Instance.MaxHeat = FromJson.Int(dictionary, "maxHeat", 0);
+            MetaGame.Instance.CurrentHeat = FromJson.Int(dictionary, "currentHeat", 0);
+            MetaGame.Instance._currentExperiencePoints = FromJson.Int(dictionary, "currentExperiencePoints", 0);
+            MetaGame.Instance._currentExperiencePoints2 = FromJson.Int(dictionary, "currentExperiencePoints2", 0);
+            MetaGame.Instance.ChosenEngineerId = FromJson.String(dictionary, "chosenEngineerId", "");
+            MetaGame.Instance.ChosenEconomyId = FromJson.String(dictionary, "chosenEconomyId", "");
+            MetaGame.Instance.ChosenSpecialistId = FromJson.String(dictionary, "chosenSpecialistId", "");
+            MetaGame.Instance.ChosenDifficulty = (MetaGame.Difficulty)FromJson.Int(dictionary, "chosenDifficulty", 0);
+            MetaGame.Instance.RunAttemptCounts = FromJson.DictionaryIntInt(dictionary, "runAttemptCounts", new Dictionary<int, int>());
+            MetaGame.Instance._metaProgressionUpgradeIdWithMultiplier = FromJson.DictionaryStringInt(dictionary, "metaProgressionUpgradeIdWithMultiplier", new Dictionary<string, int>());
+            if (FromJson.Int(dictionary, "metaProgressionVersion", 0) < GameBalancingStore.CurrentMetaProgressionVersion)
+            {
+                MetaGame.Instance._metaProgressionUpgradeIdWithMultiplier.Clear();
+            }
+            foreach (MetaProgressionUpgrade metaProgressionUpgrade in MetaProgressionUpgrade.MetaProgressionUpgrades())
+            {
+                if (metaProgressionUpgrade.isDeactivated)
+                {
+                    MetaGame.Instance._metaProgressionUpgradeIdWithMultiplier.Remove(metaProgressionUpgrade.metaProgressionUpgradeId);
+                }
+            }
+            MetaGame.Instance.NewAscensionUnlockedJustNow = false;
+            if (FromJson.Int(dictionary, "currentExperiencePointsVersion", 0) != GameBalancingStore.CurrentExperiencePointsVersion)
+            {
+                MetaGame.Instance._currentExperiencePoints = 0;
+                MetaGame.Instance._currentExperiencePoints2 = 0;
+            }
+            if (MetaGame.Instance.MaxReachedAscensionLevelInternal == 10 && MetaGame.Instance.MaxHeat > 0)
+            {
+                MetaGame.Instance.MaxReachedAscensionLevelInternal = 11;
+                if (GameBalancingStore.MaxAscensionLevel > 10 && MetaGame.Instance.CurrentAscensionLevel == 10)
+                {
+                    MetaGame.Instance.CurrentAscensionLevel = 11;
+                }
+                MetaGame.Instance.SaveToFile();
+            }
+        }
+
+
+        [HarmonyPatch(typeof(SceneManagerWrapper), "LoadMainMenu")] public static class Patch_SceneManagerWrapper_LoadMainMenu {
+            [HarmonyPrefix] public static bool Prefix() {
+                if (!is_client)
+                {
+                    ClearIngameData();
+                    if (IsServerUp())
+                    {
+                        ((GameServer)networked_game).ResetClientLoadStatesForMainMenu();
+                    }
+                }
+                return true;
+            }
+        }
+        // this will fire off many times during stage select scene, since the player may be going in & out of the shop etc. so expect this to run a few times during intermission
+        [HarmonyPatch(typeof(SceneManagerWrapper), "LoadIntermissionScreen")] public static class Patch_SceneManagerWrapper_LoadIntermissionScreen {
+            [HarmonyPrefix] public static bool Prefix() {
+                if (!is_client)
+                {
+                    ClearIngameData();
+                    if (IsServerUp() && Game.StageMap != null)
+                    {
+                        ((GameServer)networked_game).ResetClientLoadStatesForNextStage();
+                    }
+                }
+                return true;
+            }
+        }
+        // hooks all menu interactions basically & stub out clients saving progress
+        public static string last_written_savegame_json;
+        [HarmonyPatch(typeof(Game), "WriteSaveGameFile")] public static class Patch_Game_WriteSaveGameFile {
+            [HarmonyPrefix] public static bool Prefix() {
+                if (!is_client)
+                {
+                    last_written_savegame_json = Game.ToJson();
+                    if (SceneManagerWrapper.IsIntermissionScreen()
+                    ||  SceneManagerWrapper.IsReward()
+                    ||  SceneManagerWrapper.IsShop())
+                    {
+                        SendServerMenuPacket(new ServerStageUpdated(last_written_savegame_json, MetaGame._instance.ToJson()));
+                    }
+                    return true;
+                }
+                return false;
+            }
+        }
+        // stub out clients saving profile file
+        [HarmonyPatch(typeof(MetaGame), "SaveToFile")] public static class Patch_MetaGame_SaveToFile {
+            [HarmonyPrefix] public static bool Prefix() => !is_client;
+        }
+        [HarmonyPatch(typeof(Game), "DeleteSaveGameFile")] public static class Patch_Game_DeleteSaveGameFile {
+            [HarmonyPrefix] public static bool Prefix() => !is_client;
+        }
+        [HarmonyPatch(typeof(SceneManagerWrapper), "LoadGameSceneAdditional")] public static class Patch_SceneManagerWrapper_LoadGameSceneAdditional {
+            [HarmonyPrefix] public static bool Prefix() {
+                if (!is_client)
+                {
+                    SendServerMenuPacket(new ServerBeginStageLoad(last_written_savegame_json, MetaGame._instance.ToJson()));
+                }
+                return true;
+            }
+        }
+
+        public static void RecievedStageLoad(string savegame_json, string profile_json)
+        {
+            RecievedIntermissionStateChange(savegame_json, profile_json, false);
+            if (LoadScene._instance != null){
+
+                RCMManager.Log("beginning next level load");
+                //LoadScene._instance.LoadNextLevel();
+
+                Game.StageMap.CurrentLevelMap.ChosenField = 0;
+
+                LoadScene._instance._nextLevelIsLoading = true;
+                OverWorldMapUI.DeactivateHeaderText_Static();
+                //LevelMap currentLevelMap = Game.StageMap.CurrentLevelMap;
+                //int num = (currentLevelMap.IsCurrentLevelFinished ? (currentLevelMap.CurrentLevel + 1) : currentLevelMap.CurrentLevel);
+                //int chosenField = currentLevelMap.ChosenField;
+
+                GuiController.OnPressedEnemyLaunchButton();
+                if (LoadScene._instance.loadingBar){
+                    LoadScene._instance.loadingBar.SetActive(true);
+                    LoadScene._instance.loadingBar.transform.Find("Foreground").GetComponent<UnityEngine.UI.Image>().fillAmount = 0f;
+                }
+                LoadScene._instance.StartCoroutine("InitMapAndLoadNextLevelAfterOneFrame");
+
+                RCMManager.Log("started sequence for next level load...");
+            }
+            else
+            {
+
+                RCMManager.Log("failed next level load");
+            }
+        }
+        
+        [HarmonyPatch(typeof(PlaceMapObjectsBeforePlayerCanStart), "LateUpdate")] public static class LateUpdate_Patch{
+            public static bool Prefix(PlaceMapObjectsBeforePlayerCanStart __instance){
+                // this is just the original function but we report to client/host that we're loaded
+                if (PlaceMapObjectsBeforePlayerCanStart.MapObjectsReady)
+                    return false;
+                if (SceneManager.GetActiveScene().name != "Game")
+                    return false;
+                __instance._frameCount++;
+                if (__instance._frameCount < 4)
+                    return false;
+
+                if (__instance._spawnEntitiesOnLevelStartsBeforeAi.Count > 0){
+                    __instance.RunSpawnEntitiesOnLevelStarts(__instance._spawnEntitiesOnLevelStartsBeforeAi);
+                    return false;
+                }
+                if (!__instance._aiHasBeenSetup){
+                    PlaceMapObjectsBeforePlayerCanStart.MapObjectsBeforeAiReady = true;
+                    return false;
+                }
+                if (__instance._spawnEntitiesOnLevelStarts.Count > 0){
+                    __instance.RunSpawnEntitiesOnLevelStarts(__instance._spawnEntitiesOnLevelStarts);
+                    return false;
+                }
+
+                WorldGrid.Instance.GenerateContourLineInfos(true);
+                Pathfinding.CalculateAreaMap(true);
+                PlaceMapObjectsBeforePlayerCanStart.MapObjectsReady = true;
+                __instance.startGameManuallyButton.gameObject.SetActive(true);
+                Time.timeScale = 0f;
+                Game.StartLevelTimer();
+                // now signal that game is loaded !!!!
+                if (is_client)
+                {
+                    SendClientInGamePacket(new ClientMapLoaded());
+                }
+                else
+                {
+                    // send packet to all already loaded clients 
+                    // + record that our game is now ready to replicate gamestate to all other not-yet-loaded clients
+                    if (IsServerUp())
+                    {
+                        ((GameServer)networked_game).BeginReplicatingGameEntities();
+                    }
+                }
+
+                return false;
+            }
+        }
+        
+        // stub out reward map interactions for clients
+        [HarmonyPatch(typeof(LoadScene), "LoadLevel")] public static class Patch_LoadScene_LoadLevel{
+            [HarmonyPrefix] public static bool Prefix() {
+                return !is_client;
+            }
+        }
+        #endregion
+
+
+        #region UNCATEGORIZED ENTITY INIT/DESTROY
         static bool has_run_initial_engi = false;
         static bool block_next_init = false;
         [HarmonyPatch(typeof(EntityController), "Init")] public static class Patch_EntityController_Init {
@@ -330,7 +645,7 @@ namespace RCM_Coop {
             }
             [HarmonyReversePatch] public static void Original(EntityController __instance, bool withoutTriggeringDestructionActions, EntityController originator) { throw new ree("err"); }
         }
-
+        #endregion
 
         #region ENTITY POSITION SYNC PATCHES
         const float MAX_CLIENT_UNIT_DIST_FROM_SERVER = 5.0f;
@@ -764,7 +1079,6 @@ namespace RCM_Coop {
         }
         #endregion
 
-
         #region PAUSE GAME PATCHES
         [HarmonyPatch(typeof(Navigator), "SlowDown")] public static class Patch_Navigator_SlowDown {
             [HarmonyPrefix] public static bool Prefix(bool withMessage) {
@@ -810,7 +1124,6 @@ namespace RCM_Coop {
             [HarmonyReversePatch] public static void Original() { throw new ree("err"); }
         }
         #endregion
-
 
         #region CLIENT EXECUTE COMMAND STUBS
         [HarmonyPatch(typeof(RemoveTagAiAction), "AppendToCommandChain")] public static class Patch_RemoveTagAiAction_AppendToCommandChain {
@@ -882,7 +1195,6 @@ namespace RCM_Coop {
 
         #endregion
 
-
         #region UNIT OWNERSHIP - APPLYING PLAYER MATERIALS
         [HarmonyPatch(typeof(EntityController), "ReplaceMaterial")] public static class Patch_EntityController_ReplaceMaterial {
             [HarmonyPrefix] public static bool Prefix(EntityController __instance, Material newMaterial) {
@@ -894,7 +1206,6 @@ namespace RCM_Coop {
                 if (player != null) {
                     if (uniqueMat.HasProperty("Color_72ECFA4B"))
                         uniqueMat.SetColor("Color_72ECFA4B", player.color);
-                    RCMManager.Log("entity had material applied from player id: " + player.id);
                 }
 
                 MaterialHelper.ReplaceMaterialInAllHierarchies(__instance.transform, __instance.materialToReplace, uniqueMat);
@@ -1023,7 +1334,6 @@ namespace RCM_Coop {
             }
         }
         #endregion
-
 
         #region PLACEMENT & EFFECTS SYNC
         static Dictionary<ushort, GameObject> placement_ghosts = new();
@@ -1364,7 +1674,6 @@ namespace RCM_Coop {
         }
 
         #endregion
-
 
         #region HARVESTER SYNC PATCHES 
         static Harvest GetEntityHarvest(EntityController entity){

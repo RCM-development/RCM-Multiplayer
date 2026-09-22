@@ -20,6 +20,11 @@ namespace RCM_Coop.Network{
             session.connection_terminated_callback = RouteOnConnectionTerminated;
             session.connection_opened_callback = RouteOnConnectionOpened;
         }
+        public void Release() {
+            if (session == null) return;
+            session.Terminate();
+            session = null;
+        }
 
         void RouteOnDataRecieved(byte[] data, TcpClient client){
             UnityMainThreadDispatcher.Enqueue(() => { OnDataReceived(data, client); });
@@ -39,6 +44,7 @@ namespace RCM_Coop.Network{
                             RCMManager.Log($"[Co-op] accepted into session, waiting for host...");
                             PlayerManager.AddOurselves(e.player_id, submited_color);
                             // enter awaiting host screen
+                            SceneManagerWrapper.LoadMainMenu();
                             break;
                         case ServerJoinResponseFailed e:
                             switch (e.join_error){
@@ -196,21 +202,37 @@ namespace RCM_Coop.Network{
                         case ServerRequestDropComplete e:
                             Patch_Drop_Start.ClientRecieve(e);
                             break;
+
+                        case ServerBeginNewRun e:
+                            RCMManager.Log($"[Co-op] client told that we're starting a new run");
+                            RecievedStartNewRun();
+                            break;
+                        case ServerReturnToMenu e:
+                            RCMManager.Log($"[Co-op] client told to go back to main menu");
+                            SceneManagerWrapper.LoadMainMenu();
+                            break;
+                        case ServerStageUpdated e:
+                            RCMManager.Log($"[Co-op] client recieved savegame change and has applied changes...");
+                            CoopManager.RecievedIntermissionStateChange(e.json, e.profile_json);
+                            break;
+                        case ServerBeginStageLoad e:
+                            RCMManager.Log($"[Co-op] client recieved start stage request");
+                            CoopManager.RecievedStageLoad(e.json, e.profile_json);
+                            break;
                     }
             } catch (Exception ex){
                 RCMManager.Log($"[Co-op] failed to read recieved packets: {ex.Message} callstack: {ex.StackTrace}");
             }
         }
         void OnConnectionTerminated(TcpClient client){
-            RCMManager.Log($"[Co-op] Connection terminated with {client.Client.RemoteEndPoint}");
-
-            // TODO: exit client multiplayer mode??
-            // - return to main menu or stay in session if game is running
+            RCMManager.Log($"[Co-op] Connection terminated with host... (cant use descriptor identifier because the resource has been released)");
+            CoopManager.SessionTerminated();
         }
         Color submited_color;
         void OnConnectionOpened(TcpClient client){
             RCMManager.Log($"[Co-op] Connection opened with {client.Client.RemoteEndPoint}, sending join packet");
             submited_color = new Color(UnityEngine.Random.value, UnityEngine.Random.value, UnityEngine.Random.value, 1f);
+            SceneManagerWrapper.LoadMainMenu();
             session.SendTCP(new ClientJoinRequest("username123", "password123", submited_color));
         }
 
