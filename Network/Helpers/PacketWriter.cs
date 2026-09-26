@@ -9,8 +9,12 @@ namespace RCM_Coop.Network.Helpers{
     public class PacketWriter{
         List<byte> written_data = new();
         public byte[] GetData() => written_data.ToArray();
-        public void SerializeString(string s)
-        {
+        public void SerializeString(string s){
+            if (string.IsNullOrEmpty(s)){
+                written_data.Add(0);
+                return;
+            }
+
             byte[] buffer = new byte[s.Length + 1];
             Encoding.UTF8.GetBytes(s, 0, s.Length, buffer, 0);
             written_data.AddRange(buffer);

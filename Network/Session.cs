@@ -13,37 +13,8 @@ using static RCM_Coop.Network.GameProtocols;
 namespace RCM_Coop{
 
     public class Session{
-        protected const int TcpPort = 5000;
+        protected const int TcpPort = 5500;
         protected const int MAX_PACKET_SIZE = 131072;
-        // NOTE: TEMPORARY FUNCTIONS TO HELP WITH LOCAL GAME TESTING
-        public static async Task<Session> StartAutoAsync(){
-            bool serverExists = CanConnectToServer();
-            RCMManager.Log("Checking for existing server... " + serverExists);
-            // if no server, start one else if that fails start as client
-            if (!serverExists) try{ 
-                return new SessionServer();
-            } catch (Exception ex){ RCMManager.Log("Failed to initialize as a server, so booting as client instead (but we have no server to connect to ??): " + ex);}
-            return new SessionClient();
-        }
-        //private static async Task<bool> CanConnectToServer(){
-        //    try{ using (var client = new TcpClient()){
-        //        var connectTask = client.ConnectAsync(IPAddress.Loopback, TcpPort);
-        //        var timeoutTask = Task.Delay(500);
-        //        var finished = await Task.WhenAny(connectTask, timeoutTask);
-        //        return finished == connectTask && client.Connected;
-        //    }} catch{ RCMManager.Log("Error occurred while checking for server."); }
-        //    return false;
-        //}
-        private static bool CanConnectToServer(){
-            try{
-                var test = new TcpListener(IPAddress.Loopback, TcpPort);
-                test.Start();
-                test.Stop();
-                return false;
-            } catch{
-                return true;
-            }
-        }
 
 
         public bool is_server;
@@ -92,7 +63,7 @@ namespace RCM_Coop{
         }
         private async Task StartTcpServer(){
             try{
-                listener = new TcpListener(IPAddress.Loopback, TcpPort);
+                listener = new TcpListener(IPAddress.Any, TcpPort);
                 listener.Start();
                 RCMManager.Log("Server TCP alive");
 
@@ -127,8 +98,9 @@ namespace RCM_Coop{
 
     class SessionClient : Session{
         TcpClient tcpClient;
-        public SessionClient(){
-            is_alive = true; is_server = false;
+        IPAddress host_address;
+        public SessionClient(IPAddress host_address){
+            is_alive = true; is_server = false; this.host_address = host_address;
             Task.Run(StartTcpClient);
         }
         public override void Terminate(){
@@ -140,9 +112,10 @@ namespace RCM_Coop{
             } catch (Exception ex){ RCMManager.Log("Error terminating session client: " + ex.Message);}
         }
         protected override async void SendTCP(byte[] data) => await SendTCP(data, tcpClient);
-        private async Task StartTcpClient(){
+        private async Task StartTcpClient()
+        {
             try{tcpClient = new TcpClient();
-                await tcpClient.ConnectAsync(IPAddress.Loopback, TcpPort);
+                await tcpClient.ConnectAsync(host_address, TcpPort);
                 RCMManager.Log("Client TCP connection established");
                 connection_opened_callback?.Invoke(tcpClient);
 
@@ -160,53 +133,3 @@ namespace RCM_Coop{
     }
     
 }
-
-// const int UdpPort = 5001;
-//UdpClient udpServer;
-//List<IPEndPoint> udpClientEndpoints = new List<IPEndPoint>();
-//Task.Run(StartUdpServer);
-//if (udpServer != null) udpServer.Close();
-//async void SendUDP(byte[] data){
-//    for (int i = 0; i < udpClientEndpoints.Count; i++){
-//        try{await udpServer.SendAsync(data, data.Length, udpClientEndpoints[i]);
-//        } catch (Exception ex){ RCMManager.Log("Server error sending UDP message: " + ex);  }
-//}}
-//private async Task StartUdpServer(){
-//    try{
-//        udpServer = new UdpClient(UdpPort);
-//        RCMManager.Log("Server UDP alive");
-//        while (is_alive){
-//            var result = await udpServer.ReceiveAsync();
-//            if (!is_alive) break;
-//            if (!udpClientEndpoints.Contains(result.RemoteEndPoint)){
-//                udpClientEndpoints.Add(result.RemoteEndPoint);
-//            }
-//            string msg = Encoding.UTF8.GetString(result.Buffer);
-//            RCMManager.Log("SERVER UDP RECEIVED: " + msg);
-//        }
-//    } catch (Exception e){ RCMManager.Log("SERVER UDP ERROR: " + e.Message); }
-//    Terminate();
-//}
-
-//UdpClient udpClient;
-//IPEndPoint serverUdpEndPoint;
-//Task.Run(StartUdpClient);
-//if (udpClient != null) udpClient.Close();
-//async void SendUDP(byte[] data){
-//    try{ if (udpClient != null && is_alive) await udpClient.SendAsync(data, data.Length);
-//    } catch (Exception ex){ RCMManager.Log("Error sending UDP message: " + ex.Message); }
-//}
-//private async Task StartUdpClient(){
-//    try{
-//        udpClient = new UdpClient(0);
-//        serverUdpEndPoint = new IPEndPoint(IPAddress.Loopback, UdpPort);
-//        udpClient.Connect(serverUdpEndPoint);
-//        RCMManager.Log("Client UDP connection established");
-//        while (is_alive){
-//            var result = await udpClient.ReceiveAsync();
-//            string msg = Encoding.UTF8.GetString(result.Buffer);
-//            RCMManager.Log("CLIENT UDP RECEIVED: " + msg);
-//        }
-//    } catch (Exception e){ RCMManager.Log("CLIENT UDP ERROR: " + e.Message); } 
-//    Terminate();
-//}

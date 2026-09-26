@@ -5,6 +5,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Net;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -66,7 +67,9 @@ namespace RCM_Coop {
             }
             else if (session == null)
             {
-                mod.CreateButtonField("connect", BeginConnect);
+                mod.CreateButtonField("Host", BeginHost);
+                mod.CreateButtonField("Join", BeginClient);
+                mod.CreateTextInputField("Join IP", TargetIPInputChanged);
             }
             else
             {
@@ -91,22 +94,33 @@ namespace RCM_Coop {
         static bool is_client => session?.is_server == false;
 
         static NetworkedGame networked_game = null;
-        static async void BeginConnect() {
+        static async void BeginHost(){
+            if (is_connecting) return;
             is_connecting = true;
-            UpdateUI();
-            RCMManager.Log("beginning connect");
-            session = await Session.StartAutoAsync();
-            if (session.is_server)
-            {
-                networked_game = new GameServer(session);
-            }
-            else
-            {
-                networked_game = new GameClient(session);
-            }
+            RCMManager.Log("initiating server");
+            session = new SessionServer();
+            networked_game = new GameServer(session);
             is_connecting = false;
             UpdateUI();
         }
+        static string target_id_string = "127.0.0.1";
+        static async void BeginClient(){
+            if (is_connecting) return;
+            is_connecting = true;
+            if (IPAddress.TryParse(target_id_string, out IPAddress ip)){
+                RCMManager.Log("beginning client connect");
+                session = new SessionClient(ip);
+                networked_game = new GameClient(session);
+            }
+            else RCMManager.Log("Invalid IP address");
+            is_connecting = false;
+            UpdateUI();
+        }
+        static async void TargetIPInputChanged(string new_ip_text)
+        {
+            target_id_string = new_ip_text;
+        }
+
         static void RequestEntityData()
         {
             RCMManager.Log("entity button pressed");
@@ -280,6 +294,7 @@ namespace RCM_Coop {
         // disable menu play buttons for clients
         public static void RecievedStartNewRun()
         {
+            client_ready_to_enter_game = false;
             // make sure we have specifically our save profile loaded so we can choose our own unlocked specialists for joining into other sessions...
             MetaGame.Instance.LoadFromCurrentMetaSaveGamePath();
             Patch_LoadScene_MainMenuStartNewRun.Original(LoadScene._instance);
@@ -293,14 +308,14 @@ namespace RCM_Coop {
             }
             [HarmonyReversePatch] public static void Original(LoadScene __instance) { throw new ree("err"); }
         }
-        [HarmonyPatch(typeof(StartNewRun), "OnClick")] public static class Patch_StartNewRun_OnClick {
-            [HarmonyPrefix] public static bool Prefix(LoadScene __instance) {
+        [HarmonyPatch(typeof(StartNewRun), "DeleteOldSavegameAndStartNewRun")] public static class Patch_StartNewRun_DeleteOldSavegameAndStartNewRun {
+            [HarmonyPrefix] public static bool Prefix(StartNewRun __instance) {
                 if (is_client) return false;
-                RCMManager.Log("StartNewRun onclick pressed, telling clients to pick units");
+                RCMManager.Log("StartNewRun DeleteOldSavegameAndStartNewRun pressed, telling clients to pick units");
                 SendServerMenuPacket(new ServerBeginNewRun());
                 return true;
             }
-            [HarmonyReversePatch] public static void Original(LoadScene __instance) { throw new ree("err"); }
+            [HarmonyReversePatch] public static void Original(StartNewRun __instance) { throw new ree("err"); }
         }
         [HarmonyPatch(typeof(LoadScene), "MainMenuContinueRun")] public static class Patch_LoadScene_MainMenuContinueRun {
             [HarmonyPrefix] public static bool Prefix(LoadScene __instance) {
@@ -322,6 +337,7 @@ namespace RCM_Coop {
                     client_blueprints = new List<string>();
                     client_blueprints.Add(EntityBalancingStore.FactoryEntityId(entityId2));
                     client_blueprints.Add(EntityBalancingStore.FactoryEntityId(entityId3) ?? entityId3);
+                    client_ready_to_enter_game = true;
                     SendClientInGamePacket(new ClientStartersSelected());
                 }
                 RCMManager.Log("Beginning startrunbuttonclicked");
@@ -333,14 +349,26 @@ namespace RCM_Coop {
 
 
         }
+        static bool client_ready_to_enter_game = false;
         static string client_specialist_entityid;
         static List<string> client_blueprints = new();
         static List<string> client_drops = new();
         public static void RecievedIntermissionStateChange(string savegame_json, string profile_json, bool reload_stage_map = true){
+
+            if (string.IsNullOrWhiteSpace(savegame_json)) RCMManager.Log("recieved savegame json was empty.");
+            if (string.IsNullOrWhiteSpace(profile_json))  RCMManager.Log("recieved profile json was empty.");
+
             ApplySaveProfile(profile_json);
             Game.InitFromJson(savegame_json);
             Game.Specialists = new List<string>();
             if (!string.IsNullOrWhiteSpace(client_specialist_entityid)) Game.Specialists.Add(client_specialist_entityid);
+
+            // add blueprints for each extra the host compared to our local ones
+            // add drops for each extra one the host has over us
+
+
+
+
             Game.CardsInDeck = client_blueprints;
             Game.Drops = client_drops;
             // if we aren't on the right scene then lets send us in...
@@ -406,6 +434,7 @@ namespace RCM_Coop {
 
         [HarmonyPatch(typeof(SceneManagerWrapper), "LoadMainMenu")] public static class Patch_SceneManagerWrapper_LoadMainMenu {
             [HarmonyPrefix] public static bool Prefix() {
+                client_ready_to_enter_game = false;
                 if (!is_client)
                 {
                     ClearIngameData();
@@ -435,9 +464,9 @@ namespace RCM_Coop {
         public static string last_written_savegame_json;
         [HarmonyPatch(typeof(Game), "WriteSaveGameFile")] public static class Patch_Game_WriteSaveGameFile {
             [HarmonyPrefix] public static bool Prefix() {
-                if (!is_client)
-                {
+                if (!is_client){
                     last_written_savegame_json = Game.ToJson();
+                    RCMManager.Log($"savegame json written... {last_written_savegame_json.Length} total bytes");
                     if (SceneManagerWrapper.IsIntermissionScreen()
                     ||  SceneManagerWrapper.IsReward()
                     ||  SceneManagerWrapper.IsShop())
@@ -449,6 +478,15 @@ namespace RCM_Coop {
                 return false;
             }
         }
+        [HarmonyPatch(typeof(Game), "LoadSaveGame")] public static class Patch_Game_LoadSaveGame {
+            [HarmonyPrefix] public static void Postfix() {
+                if (!is_client){
+                    RCMManager.Log($"savegame json read & copied to replicate... {last_written_savegame_json.Length} total bytes");
+                    last_written_savegame_json = Game.ToJson();
+                }
+            }
+        }
+
         // stub out clients saving profile file
         [HarmonyPatch(typeof(MetaGame), "SaveToFile")] public static class Patch_MetaGame_SaveToFile {
             [HarmonyPrefix] public static bool Prefix() => !is_client;
@@ -468,6 +506,8 @@ namespace RCM_Coop {
 
         public static void RecievedStageLoad(string savegame_json, string profile_json)
         {
+            if (!client_ready_to_enter_game) return;
+
             RecievedIntermissionStateChange(savegame_json, profile_json, false);
             if (LoadScene._instance != null){
 

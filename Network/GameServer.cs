@@ -214,10 +214,15 @@ namespace RCM_Coop{
                                 || SceneManagerWrapper.IsReward()
                                 || SceneManagerWrapper.IsShop())
                                 {
-                                    session.SendTCP(new ServerStageUpdated(Game.ToJson(), MetaGame._instance.ToJson()), client);
+                                    // NOTE: cannot send this as we need to send our save file PRIOR to game start, as it technically progresses
                                     if (SceneManagerWrapper.IsGame())
                                     {
-                                        SendServerMenuPacket(new ServerBeginStageLoad(last_written_savegame_json, MetaGame._instance.ToJson()));
+                                        //SendServerMenuPacket(new ServerBeginStageLoad(last_written_savegame_json, MetaGame._instance.ToJson()));
+                                        session.SendTCP(new ServerBeginStageLoad(last_written_savegame_json, MetaGame._instance.ToJson()), client);
+                                    }
+                                    else
+                                    {
+                                        session.SendTCP(new ServerStageUpdated(last_written_savegame_json, MetaGame._instance.ToJson()), client);
                                     }
                                 }
                                 // update player status to now be in game
