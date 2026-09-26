@@ -20,7 +20,7 @@ using RCM_Coop.Network;
 using RCM_Coop.Network.Entities;
 using Shapes;
 using SmartTutorial;
-using TestMod;
+using RCM_GUI;
 using UnityEngine;
 using UnityEngine.Analytics;
 using UnityEngine.Networking.Types;
@@ -308,12 +308,18 @@ namespace RCM_Coop {
             }
             [HarmonyReversePatch] public static void Original(LoadScene __instance) { throw new ree("err"); }
         }
-        [HarmonyPatch(typeof(StartNewRun), "DeleteOldSavegameAndStartNewRun")] public static class Patch_StartNewRun_DeleteOldSavegameAndStartNewRun {
+        [HarmonyPatch(typeof(StartNewRun), "OnClick")] public static class Patch_StartNewRun_OnClick {
             [HarmonyPrefix] public static bool Prefix(StartNewRun __instance) {
                 if (is_client) return false;
-                RCMManager.Log("StartNewRun DeleteOldSavegameAndStartNewRun pressed, telling clients to pick units");
+
+                if (Game.SaveGameFileExists()){
+                    __instance.ShowDeleteActiveRunConfirmationPopup();
+                    return false;
+                }
+                StartNewRun.DeleteOldSavegameAndStartNewRun();
+                RCMManager.Log("StartNewRun OnClick pressed, telling clients to pick units");
                 SendServerMenuPacket(new ServerBeginNewRun());
-                return true;
+                return false;
             }
             [HarmonyReversePatch] public static void Original(StartNewRun __instance) { throw new ree("err"); }
         }
@@ -343,9 +349,6 @@ namespace RCM_Coop {
                 RCMManager.Log("Beginning startrunbuttonclicked");
                 return true;
             }
-            [HarmonyPrefix] public static void Postfix() {
-                RCMManager.Log("ending startrunbuttonclicked");
-            }
 
 
         }
@@ -354,23 +357,65 @@ namespace RCM_Coop {
         static List<string> client_blueprints = new();
         static List<string> client_drops = new();
         public static void RecievedIntermissionStateChange(string savegame_json, string profile_json, bool reload_stage_map = true){
+            // we also block recieving this data unless we've selected units and all that first
+            if (!client_ready_to_enter_game) return;
 
-            if (string.IsNullOrWhiteSpace(savegame_json)) RCMManager.Log("recieved savegame json was empty.");
-            if (string.IsNullOrWhiteSpace(profile_json))  RCMManager.Log("recieved profile json was empty.");
+            if (string.IsNullOrWhiteSpace(savegame_json)){
+                RCMManager.Log("WARNING: host did not submit their savegame state, tho they may send it when they load??");
+                return;
+            }
+            if (string.IsNullOrWhiteSpace(profile_json))
+                 RCMManager.Log("WARNING: host did not send over profile json, however they did send their savegame...");
+            else ApplySaveProfile(profile_json);
 
-            ApplySaveProfile(profile_json);
             Game.InitFromJson(savegame_json);
             Game.Specialists = new List<string>();
             if (!string.IsNullOrWhiteSpace(client_specialist_entityid)) Game.Specialists.Add(client_specialist_entityid);
 
+
+            RCMManager.Log($"specialist '{client_specialist_entityid}', blueprints count: {client_blueprints.Count}, drops count: {client_drops.Count}");
+
             // add blueprints for each extra the host compared to our local ones
+            if (Game.CardsInDeck.Count > client_blueprints.Count){
+
+                List<string> potential_blueprints = new();
+                for (Rarity rarity = Rarity.Common; rarity <= Rarity.UltraRare; rarity++)
+                    potential_blueprints.AddRange(EntityBalancingStore.AllEntityIdsAllowedAsBlueprints(rarity, null, false, Tech.All, MetaGame.Instance.CurrentExperienceLevel, null));
+
+                // filter out existinbg strings that we have
+                foreach (string s in client_blueprints){
+                    for (int i = 0; i < potential_blueprints.Count; i++){
+                        if (potential_blueprints[i] == s){
+                            potential_blueprints.RemoveAt(i);
+                            i--;
+                }}}
+
+                // pick random numbers while our count is smaller
+                while (Game.CardsInDeck.Count > client_blueprints.Count && potential_blueprints.Count > 0){
+                    int index = UnityEngine.Random.Range(0, potential_blueprints.Count);
+
+                    client_blueprints.Add(potential_blueprints[index]);
+                    RCMManager.Log($"blueprint '{potential_blueprints[index]}', added to clients deck, since host had more blueprints than us");
+                    potential_blueprints.RemoveAt(index);
+                }
+            }
+
             // add drops for each extra one the host has over us
+            if (Game.Drops.Count > client_drops.Count){
+                List<string> possible_drops = EntityBalancingStore.AllEntityIdsHaving(UnitRole.Drop, null, false, EntityBalancingStore.SpecialistFilter.OnlyForNonSpecialists, false, MetaGame.Instance.CurrentExperienceLevel);
+                // pick random numbers while our count is smaller
+                while (Game.Drops.Count > client_blueprints.Count && possible_drops.Count > 0){
+                    int index = UnityEngine.Random.Range(0, possible_drops.Count);
+
+                    client_drops.Add(possible_drops[index]);
+                    RCMManager.Log($"added '{possible_drops[index]}' to clients drops, since host had more drops than us");
+                }
+            }
 
 
 
-
-            Game.CardsInDeck = client_blueprints;
-            Game.Drops = client_drops;
+            Game.CardsInDeck = new (client_blueprints);
+            Game.Drops = new (client_drops);
             // if we aren't on the right scene then lets send us in...
             // actually just make us reload the entire scene every single time !
             if (!SceneManagerWrapper.IsRunSetup() && reload_stage_map)
@@ -479,9 +524,13 @@ namespace RCM_Coop {
             }
         }
         [HarmonyPatch(typeof(Game), "LoadSaveGame")] public static class Patch_Game_LoadSaveGame {
-            [HarmonyPrefix] public static void Postfix() {
+            [HarmonyPrefix] public static bool Prefix() {
+                RCMManager.Log($"loadgame attempted made !!!! (there should be a follow up log to this unless it failed...)");
+                return true;
+            }
+            [HarmonyPostfix] public static void Postfix() {
+                RCMManager.Log($"savegame json read & copied to replicate... {last_written_savegame_json.Length} total bytes");
                 if (!is_client){
-                    RCMManager.Log($"savegame json read & copied to replicate... {last_written_savegame_json.Length} total bytes");
                     last_written_savegame_json = Game.ToJson();
                 }
             }
@@ -489,10 +538,18 @@ namespace RCM_Coop {
 
         // stub out clients saving profile file
         [HarmonyPatch(typeof(MetaGame), "SaveToFile")] public static class Patch_MetaGame_SaveToFile {
-            [HarmonyPrefix] public static bool Prefix() => !is_client;
+            [HarmonyPrefix] public static bool Prefix() {
+                if (is_client) return false;
+                RCMManager.Log("Saving savegame to file...");
+                return true;
+            }
         }
         [HarmonyPatch(typeof(Game), "DeleteSaveGameFile")] public static class Patch_Game_DeleteSaveGameFile {
-            [HarmonyPrefix] public static bool Prefix() => !is_client;
+            [HarmonyPrefix] public static bool Prefix() {
+                if (is_client) return false;
+                RCMManager.Log("deleting savegame file...");
+                return true;
+            }
         }
         [HarmonyPatch(typeof(SceneManagerWrapper), "LoadGameSceneAdditional")] public static class Patch_SceneManagerWrapper_LoadGameSceneAdditional {
             [HarmonyPrefix] public static bool Prefix() {

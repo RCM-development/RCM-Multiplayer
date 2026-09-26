@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 using PimDeWitte.UnityMainThreadDispatcher;
 using RCM_Coop.Network.Entities;
 using RCM_Coop.Network.Helpers;
-using TestMod;
+using RCM_GUI;
 using UnityEngine;
 using static RCM_Coop.CoopManager;
 using static RCM_Coop.Network.GameProtocols;
@@ -51,12 +51,8 @@ namespace RCM_Coop.Network{
                                 case ServerJoinResponseFailed.JoinError.username_taken: RCMManager.Log($"[Co-op] join failed, reason: username is taken"); break;
                                 case ServerJoinResponseFailed.JoinError.session_full: RCMManager.Log($"[Co-op] join failed, reason: session is full"); break;
                                 case ServerJoinResponseFailed.JoinError.already_connected: RCMManager.Log($"[Co-op] join failed, reason: already connected or poor TCP connection"); break;
-                                case ServerJoinResponseFailed.JoinError.bad_password:
-                                    RCMManager.Log($"[Co-op] join failed, reason: bad password");
-                                    break;
-                                case ServerJoinResponseFailed.JoinError.rejected:
-                                    RCMManager.Log($"[Co-op] join failed, reason: unspecified");
-                                    break;
+                                case ServerJoinResponseFailed.JoinError.bad_password: RCMManager.Log($"[Co-op] join failed, reason: bad password"); break;
+                                case ServerJoinResponseFailed.JoinError.rejected: RCMManager.Log($"[Co-op] join failed, reason: unspecified"); break;
                             }
                             session.Terminate();
                             break;
