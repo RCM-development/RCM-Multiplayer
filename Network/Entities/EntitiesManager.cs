@@ -138,8 +138,8 @@ namespace RCM_Coop.Network.Entities{
             if (entity_id != 0xffff && entity.entity == null) RCMManager.Log($"[Co-op] entity id destroyed:{entity_id} but couldn't find target network id in our list");
             if (originator_id != 0xffff && originator.entity == null) RCMManager.Log($"[Co-op] entity {entity.entity.entityId} destroyed by originator:{originator_id} but couldn't find target network id in our list");
 
-            Patch_EntityController_Destroy.Original(entity.entity, withoutTriggeringDestructionActions, originator.entity);
             EntityDestroyed(entity.entity, false, null);
+            Patch_EntityController_Destroy.Original(entity.entity, withoutTriggeringDestructionActions, originator.entity);
         }
 
 

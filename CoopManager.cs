@@ -199,7 +199,7 @@ namespace RCM_Coop {
         public static class InitMapPatch_StartInit {
             [HarmonyPrefix]
             public static bool Prefix(ref LandscapeGenerator landscapeGenerator, ref LandscapeGenerator fallbackLandscapeGenerator, ref DefaultAiBehaviour ai, ref bool asCoroutine, ref int? landscapeGeneratorSeed, ref bool landscapeGeneratorWasInstantiated) {
-                landscapeGeneratorSeed = 1;
+                landscapeGeneratorSeed = Game.RandomSeedForRun;
                 RCMManager.Log($"[Co-op] StartInit Prefix: landscapeGeneratorSeed set to {landscapeGeneratorSeed}");
                 return true;
             }
@@ -373,7 +373,7 @@ namespace RCM_Coop {
             if (!string.IsNullOrWhiteSpace(client_specialist_entityid)) Game.Specialists.Add(client_specialist_entityid);
 
 
-            RCMManager.Log($"specialist '{client_specialist_entityid}', blueprints count: {client_blueprints.Count}, drops count: {client_drops.Count}");
+            RCMManager.Log($"specialist '{client_specialist_entityid}', blueprints count: {client_blueprints.Count}, current drops count: {client_drops.Count}, game.drops count: {Game.Drops.Count}");
 
             // add blueprints for each extra the host compared to our local ones
             if (Game.CardsInDeck.Count > client_blueprints.Count){
@@ -403,8 +403,9 @@ namespace RCM_Coop {
             // add drops for each extra one the host has over us
             if (Game.Drops.Count > client_drops.Count){
                 List<string> possible_drops = EntityBalancingStore.AllEntityIdsHaving(UnitRole.Drop, null, false, EntityBalancingStore.SpecialistFilter.OnlyForNonSpecialists, false, MetaGame.Instance.CurrentExperienceLevel);
+                RCMManager.Log($"adding some local drops, total possible drops: {possible_drops.Count}");
                 // pick random numbers while our count is smaller
-                while (Game.Drops.Count > client_blueprints.Count && possible_drops.Count > 0){
+                while (Game.Drops.Count > client_drops.Count && possible_drops.Count > 0){
                     int index = UnityEngine.Random.Range(0, possible_drops.Count);
 
                     client_drops.Add(possible_drops[index]);
@@ -412,6 +413,8 @@ namespace RCM_Coop {
                 }
             }
 
+
+            RCMManager.Log($"finished adjusting blueprints/drops... specialist '{client_specialist_entityid}', blueprints count: {client_blueprints.Count}, current drops count: {client_drops.Count}, game.drops count: {Game.Drops.Count}");
 
 
             Game.CardsInDeck = new (client_blueprints);
@@ -529,9 +532,9 @@ namespace RCM_Coop {
                 return true;
             }
             [HarmonyPostfix] public static void Postfix() {
-                RCMManager.Log($"savegame json read & copied to replicate... {last_written_savegame_json.Length} total bytes");
                 if (!is_client){
                     last_written_savegame_json = Game.ToJson();
+                    RCMManager.Log($"savegame json read & copied to replicate... {last_written_savegame_json.Length} total bytes");
                 }
             }
         }
@@ -652,9 +655,32 @@ namespace RCM_Coop {
         }
         #endregion
 
+        public static void SpawnEngiForPlayer(byte player_id)
+        {
+            // find starting position
+            // this should just be the position of an existing enginee
+            EntityController basis = ExistingControllers.Instance.Engineer;
+            // if not then we'll pick a random friendly unit?
+            if (basis == null)
+            {
+                basis = ExistingControllers.Instance.PlayerUnits().FirstOrDefault();
+            }
+            Vector3 spawn_pos = new(0,0,0);
+            if (basis != null)
+            {
+                spawn_pos = basis.transform.position;
+            }
+
+            // spawn in all the other engineers too
+            block_next_init = true;
+            EntityController next_engi = EntityFactory.InstantiateEntity("Engineer", spawn_pos, null, "Player", "initial engineer for playerid:" + player_id, null, UnitRole.None, false, " co op spawner");
+            block_next_init = false;
+
+            EntitiesManager.EntitySpawned(next_engi, false, 255, player_id);
+            next_engi.canNotBeSelected = true;
+        }
 
         #region UNCATEGORIZED ENTITY INIT/DESTROY
-        static bool has_run_initial_engi = false;
         static bool block_next_init = false;
         [HarmonyPatch(typeof(EntityController), "Init")] public static class Patch_EntityController_Init {
             [HarmonyPrefix] public static bool Prefix(EntityController __instance, EntityController originEntity) {
@@ -666,21 +692,6 @@ namespace RCM_Coop {
 
                     EntitiesManager.EntitySpawned(__instance, next_entity_from_above_state);
 
-                    // TODO: TEMP SOLUTION I KNOW ITS DOODY
-                    // spawn in all the other engineers too
-                    if (!has_run_initial_engi && (EntityBalancingStore.UnitRoles(__instance.entityId) & UnitRole.Engineer) > 0) {
-                        has_run_initial_engi = true;
-                        foreach (var player in PlayerManager.AllPlayers()) {
-                            if (player.id != PlayerManager.GetHostPlayerID()) {
-                                block_next_init = true;
-                                EntityController next_engi = EntityFactory.InstantiateEntity(__instance.entityId, __instance.gameObject.transform.position, null, __instance.gameObject.tag, __instance.gameObject.name + " for " + player.username, null, UnitRole.None, false, " co op spawner");
-                                block_next_init = false;
-
-                                EntitiesManager.EntitySpawned(next_engi, false, 255, player.id);
-                                next_engi.canNotBeSelected = true;
-                            }
-                        }
-                    }
                 } else{
                     // check instantiation info for info to insert into 
                     string input = __instance.gameObject.name;
@@ -738,10 +749,110 @@ namespace RCM_Coop {
         }
         [HarmonyPatch(typeof(EntityController), "Destroy")] public static class Patch_EntityController_Destroy {
             [HarmonyPrefix] public static bool Prefix(EntityController __instance, bool withoutTriggeringDestructionActions, EntityController originator) {
-                if (is_client) return false; EntitiesManager.EntityDestroyed(__instance, withoutTriggeringDestructionActions, originator); return true;
+                if (is_client) return false;
+
+                byte owner = EntitiesManager.GetEntityPlayerID(__instance);
+                if (__instance.HasRole(UnitRole.Engineer))
+                    engi_owner_tracker.Add(__instance, owner);
+
+                EntitiesManager.EntityDestroyed(__instance, withoutTriggeringDestructionActions, originator); 
+                return true;
             }
             [HarmonyReversePatch] public static void Original(EntityController __instance, bool withoutTriggeringDestructionActions, EntityController originator) { throw new ree("err"); }
         }
+        static Dictionary<EntityController, byte> engi_owner_tracker = new();
+
+        // edit to give ownership to respawned engineer
+        [HarmonyPatch(typeof(ExistingControllers), nameof(ExistingControllers.OnEntityWillBeDestroyed))] public static class Patch_OnEntityWillBeDestroyed{
+            [HarmonyPrefix] public static bool Prefix(ExistingControllers __instance, EntityController entity, EntityController originator) {
+                __instance._allEntities.Remove(entity);
+                __instance._entitiesByGameObject.Remove(entity.gameObject);
+                __instance._entitiesByTag.GetOrInit(entity.tag).Remove(entity);
+                if (entity.IsControlledByAi || entity.IsControlledByPlayer)
+                {
+                    __instance._allNotNeutralEntities.Remove(entity);
+                    if (entity.IsControlledByAi)
+                    {
+                        __instance._aIEntities.Remove(entity);
+                    }
+                    else if (!entity.HasRole(UnitRole.Spawn) && !entity.HasRole(UnitRole.Skill))
+                    {
+                        __instance._playerUnitsWithoutSpawns.Remove(entity);
+                    }
+                }
+                if (entity.HasRole(UnitRole.Refinery))
+                {
+                    __instance.StopEntityBeingARefinery(entity);
+                }
+                if (entity.HasRole(UnitRole.Harvester))
+                {
+                    __instance.StopEntityBeingAHarvester(entity);
+                }
+                if (entity.IsBuilding)
+                {
+                    __instance.StopEntityBeingABuilding(entity);
+                }
+                if (entity.IsUnit)
+                {
+                    __instance.StopEntityBeingAUnit(entity);
+                }
+                if (entity.EntityId == "EngineeringHQ")
+                {
+                    __instance.StopEntityBeingTheEngineeringHq();
+                }
+                if (!entity.HasRole(UnitRole.Engineer))
+                {
+                    if (entity.HasRole(UnitRole.Builder))
+                    {
+                        __instance._builders.Remove(entity);
+                    }
+                    if (entity.IsControlledByPlayer && __instance._engineers.Count < 1 && (!__instance._buildingsByTag.ContainsKey("Player") || __instance._buildingsByTag["Player"].Count < 1))
+                    {
+                        FinishLevel.Lose_Static(entity.Position);
+                    }
+                    return false;
+                }
+                __instance.StopEntityBeingAnEngineer(entity);
+                if (FinishLevel.IsFinishing_Static())
+                {
+                    return false;
+                }
+                // get prev owner of this dead engi
+                byte owner = 255;
+                if (engi_owner_tracker.TryGetValue(entity, out owner))
+                {
+                    engi_owner_tracker.Remove(entity);
+                    RCMManager.Log($"engineer destroyed but had owner player_id: {owner}");
+                }
+
+                if (Game.CurrentDropPodCount > 0)
+                {
+                    // here we need to 
+                    if (!is_client){
+                        block_next_init = true;
+                        EntityController next_engi = BuildingPlacementHelper.CreateAndPlaceBuilding("DropPod", entity.Position, "Player", "", true, false, null, null, false, false, "EngineerDestroyed", false); 
+                        block_next_init = false;
+
+                        EntitiesManager.EntitySpawned(next_engi, false, 255, owner);
+                        RCMManager.Log($"Respawned engineer for player_id: {owner}");
+                    }
+                    Game.AddDropPods(-1, false);
+                    LevelStatistics.LifesLost++;
+                    return false;
+                }
+                __instance._deadEngineerPosition = entity.Position;
+                FinishLevel.Lose_Static(entity.Position);
+
+
+
+
+
+
+                return false;
+            }
+        }
+
+
         #endregion
 
         #region ENTITY POSITION SYNC PATCHES
@@ -918,9 +1029,28 @@ namespace RCM_Coop {
 
                         UnitCap.RemoveFromProductCount(__instance._productionInfo.entityId, __instance.IsControlledByAi, 1);
                     }
-                    int num = forFree ? int.MaxValue : __instance.gameObject.tag == "Player" ? PlayerManager.GetMoney(EntitiesManager.GetEntityPlayerID(__instance)) : Bank.ActualBalance(__instance.gameObject.tag);
-                    //int num = forFree ? int.MaxValue : Bank.ActualBalance(__instance.gameObject.tag);
-                    if (!__instance.IsProductionPossible(num)) return false;
+                    int available_funds = int.MaxValue;
+                    if (!forFree){
+                        // having some issues with host's money check, so we're going to derive from actual?
+                        if (__instance.gameObject.tag == "Player")
+                        {
+                            byte owner = EntitiesManager.GetEntityPlayerID(__instance);
+                            if (owner == 255 || owner == PlayerManager.GetHostPlayerID())
+                            {
+                                available_funds = Bank.ActualBalance(__instance.gameObject.tag);
+                            }
+                            else
+                            {
+                                available_funds = PlayerManager.GetMoney(EntitiesManager.GetEntityPlayerID(__instance));
+                            }
+                        }
+                        else
+                        {
+                            available_funds = Bank.ActualBalance(__instance.gameObject.tag);
+                        }
+                    }
+
+                    if (!__instance.IsProductionPossible(available_funds)) return false;
 
                     __instance._productionInfo.doNotTriggerHasProducedEvent = doNotTriggerHasProducedEvent;
                     __instance._productionInfo.queuedCount++;
@@ -2069,7 +2199,7 @@ namespace RCM_Coop {
 
         #endregion
 
-        #region DROP SYNC
+        #region DROP SYNC & track new ingame drops to client's drop list
         static Dictionary<ushort, Drop> drop_requests = new Dictionary<ushort, Drop>();
         [HarmonyPatch(typeof(Drop), "Start")] public static class Patch_Drop_Start{
             [HarmonyPrefix] public static bool Prefix(Drop __instance){
@@ -2141,6 +2271,22 @@ namespace RCM_Coop {
                 drop.buttonManager.UpdateUI();
             }
         }
+
+        [HarmonyPatch(typeof(Game), nameof(Game.AddDrop))] public static class Patch_Game_AddDrop{
+            [HarmonyPrefix] public static bool Prefix(string dropEntityId, bool asReward){
+                if (is_client) client_drops.Add(dropEntityId);
+                RCMManager.Log($"added drop '{dropEntityId}', blueprints count: {client_blueprints.Count}, drops count: {client_drops.Count}");
+                return true;
+            }
+        }
+        [HarmonyPatch(typeof(Game), nameof(Game.RemoveDrop))] public static class Patch_GameRemoveDrop{
+            [HarmonyPrefix] public static bool Prefix(string dropEntityId){
+                if (is_client) client_drops.Remove(dropEntityId);
+                RCMManager.Log($"removed drop '{dropEntityId}', blueprints count: {client_blueprints.Count}, drops count: {client_drops.Count}");
+                return true;
+            }
+        }
+
         #endregion
     }
 }

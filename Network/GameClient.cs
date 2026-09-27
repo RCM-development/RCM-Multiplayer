@@ -229,7 +229,9 @@ namespace RCM_Coop.Network{
             RCMManager.Log($"[Co-op] Connection opened with {client.Client.RemoteEndPoint}, sending join packet");
             submited_color = new Color(UnityEngine.Random.value, UnityEngine.Random.value, UnityEngine.Random.value, 1f);
             SceneManagerWrapper.LoadMainMenu();
-            session.SendTCP(new ClientJoinRequest("username123", "password123", submited_color));
+            string username = "user-" + UnityEngine.Random.Range(0, int.MaxValue).ToString("X");
+            session.SendTCP(new ClientJoinRequest(username, "password123", submited_color));
+
         }
 
         public void SendMapLoadedRequest(){

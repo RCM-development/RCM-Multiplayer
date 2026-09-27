@@ -194,6 +194,7 @@ namespace RCM_Coop{
                                 if (entities_spawned)
                                 {
                                     RCMManager.Log($"[Co-op] client said green to go, sending all entity data");
+                                    SpawnEngiForPlayer(GetCLientId(client));
                                     session.SendTCP(new ServerFullEntityData(EntitySerializer.CompileEntities()), client);
                                     // update player status to now be in game
                                     UpdateClientStatus(client, client_state.in_game);
@@ -305,6 +306,7 @@ namespace RCM_Coop{
             foreach (var item in clients){
                 if (item.state == client_state.in_game_awaiting_data){
                     item.state = client_state.in_game;
+                    SpawnEngiForPlayer(item.id);
                     session.SendTCP(new ServerFullEntityData(EntitySerializer.CompileEntities()), item.client);
                     return;
         }}
